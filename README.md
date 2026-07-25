@@ -87,9 +87,22 @@ Notes:
   packages instead of bundling them, so the engine updates through pacman rather
   than the in-app button.
 - **Windows** installers must be built on Windows — Tauri cannot cross-compile
-  the WebView2 target from Linux. To produce all three from one place without a
-  Windows machine, build on CI (an Ubuntu runner yields the rpm and AppImage, a
-  Windows runner yields the NSIS installer).
+  the WebView2 target from Linux. To produce all of them from one place without a
+  Windows machine, use the release workflow below.
+
+### Releases (CI)
+
+`.github/workflows/release.yml` builds every installer and attaches them to a
+GitHub release. Push a version tag:
+
+```bash
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+An Ubuntu runner produces the `.rpm` and `.AppImage`; a Windows runner produces
+the `-setup.exe`. Each runner fetches its own sidecars, so nothing binary is
+committed. The release is created as a **draft** — review the assets and click
+publish. (You can also start a build by hand from the Actions tab.)
 
 ## Keeping the engine current
 
