@@ -1,0 +1,20 @@
+# Rust build output
+/src-tauri/target/
+**/*.rs.bk
+
+# Tauri generated files
+/src-tauri/gen/schemas/
+
+# Bundled sidecars — fetched per machine, never committed
+/src-tauri/binaries/*
+!/src-tauri/binaries/.gitkeep
+
+# Claude Code local skill cache — restored from skills-lock.json
+/.claude/skills/
+
+# Editor / OS noise
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/

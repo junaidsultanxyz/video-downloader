@@ -1,0 +1,34 @@
+[package]
+name = "sluice"
+version = "0.1.0"
+description = "A minimal desktop downloader for public videos"
+authors = ["Sluice"]
+edition = "2021"
+rust-version = "1.77"
+
+# The library is what Tauri actually runs; main.rs is a thin launcher that
+# calls into it. This split is what lets the same code target mobile later.
+[lib]
+name = "sluice_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-shell = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# A downloader is I/O-bound, not compute-bound, so we optimise the release
+# build purely for a small binary: size-tuned codegen, fat LTO, one codegen
+# unit, aborting panics (no unwinding tables), and stripped symbols.
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
