@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sluice</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <!-- Header: wordmark + engine status -->
+      <header class="header">
+        <span class="wordmark">SLUICE</span>
+        <button
+          id="engine"
+          class="engine"
+          type="button"
+          title="Update the download engine"
+        >
+          <span class="engine-dot"></span>
+          <span id="engine-label" class="engine-label">checking engine…</span>
+        </button>
+      </header>
+
+      <main class="main">
+        <!-- Source: paste a link -->
+        <section class="source" aria-label="Source">
+          <div class="well">
+            <input
+              id="url"
+              class="url"
+              type="url"
+              inputmode="url"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="Paste a link"
+              aria-label="Paste a link"
+            />
+            <button id="fetch" class="btn btn-primary" type="button">Fetch</button>
+          </div>
+
+          <!-- Skeleton shown while probing -->
+          <div id="skeleton" class="preview skeleton" hidden>
+            <div class="skel-thumb"></div>
+            <div class="skel-lines">
+              <div class="skel-line"></div>
+              <div class="skel-line short"></div>
+              <div class="skel-chips">
+                <div class="skel-chip"></div>
+                <div class="skel-chip"></div>
+                <div class="skel-chip"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Probe error -->
+          <div id="probe-error" class="probe-error" hidden></div>
+
+          <!-- Preview card, filled by main.js -->
+          <div id="preview" class="preview" hidden></div>
+        </section>
+
+        <!-- Queue -->
+        <section class="queue" aria-label="Queue">
+          <div class="eyebrow-row">
+            <span class="eyebrow">Queue</span>
+            <span id="active-count" class="eyebrow active-count">0 active</span>
+          </div>
+          <div id="empty" class="empty">
+            Nothing queued yet. Paste a link above to start.
+          </div>
+          <ol id="queue-list" class="queue-list"></ol>
+        </section>
+      </main>
+
+      <!-- Footer: output dir + concurrency -->
+      <footer class="footer">
+        <button id="out-dir" class="out-dir" type="button" title="Choose a folder">
+          <span id="out-dir-label" class="out-dir-label">~/Videos</span>
+        </button>
+        <label class="concurrency">
+          <span class="eyebrow">Concurrent</span>
+          <select id="concurrency" class="concurrency-select">
+            <option value="1">1</option>
+            <option value="2" selected>2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+          </select>
+        </label>
+      </footer>
+    </div>
+
+    <script type="module" src="main.js"></script>
+  </body>
+</html>

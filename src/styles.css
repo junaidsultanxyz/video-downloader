@@ -1,0 +1,612 @@
+/* Sluice — a precision instrument panel.
+   Pale anodised housing, ink lettering, one cobalt accent for things in motion.
+   Tokens live on :root; the dark set is swapped in under prefers-color-scheme. */
+
+:root {
+  --field: #e8eae6; /* app background */
+  --panel: #f7f8f6; /* cards, input wells */
+  --ink: #1b2430; /* primary text */
+  --ink-soft: #6b7684; /* labels, metadata */
+  --rule: #cdd2cc; /* hairlines */
+  --flow: #2b5fd9; /* accent: active, progress, primary button */
+  --settled: #2f7a54; /* completed only */
+  --fault: #b4432e; /* errors only */
+
+  --font-ui: system-ui, -apple-system, "Segoe UI", Inter, sans-serif;
+  --font-data: ui-monospace, "Cascadia Mono", "JetBrains Mono", Consolas,
+    monospace;
+
+  --radius: 8px;
+  --max-width: 780px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --field: #14181d;
+    --panel: #1b2027;
+    --ink: #e4e8ec;
+    --ink-soft: #8a94a2;
+    --rule: #2a313a;
+    --flow: #5b8def;
+    --settled: #4fa97b;
+    --fault: #d9704f;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--field);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Tabular numerals everywhere data is shown — without this the readouts jitter
+   horizontally on every update. */
+.data,
+.url,
+.note,
+.q-note,
+.duration {
+  font-family: var(--font-data);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Section labels: the wide tracking is what sells the instrument feel. */
+.eyebrow {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--ink-soft);
+}
+
+/* ---- Shell layout ---------------------------------------------------- */
+
+.app {
+  max-width: var(--max-width);
+  margin: 0 auto;
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 0 20px;
+}
+
+.header {
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--rule);
+}
+
+.wordmark {
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  font-size: 13px;
+}
+
+.engine {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 6px;
+  border-radius: 6px;
+}
+
+.engine:hover {
+  color: var(--ink);
+}
+
+.engine-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ink-soft);
+}
+
+.engine.ok .engine-dot {
+  background: var(--settled);
+}
+
+.engine.busy .engine-dot {
+  background: var(--flow);
+}
+
+.main {
+  flex: 1;
+  padding: 20px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+/* ---- Source ---------------------------------------------------------- */
+
+.well {
+  display: flex;
+  gap: 8px;
+  height: 56px;
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: 8px;
+  align-items: center;
+}
+
+.url {
+  flex: 1;
+  height: 100%;
+  border: none;
+  background: none;
+  color: var(--ink);
+  font-size: 15px;
+  padding: 0 8px;
+  outline: none;
+}
+
+.url::placeholder {
+  color: var(--ink-soft);
+}
+
+/* ---- Buttons --------------------------------------------------------- */
+
+.btn {
+  font: inherit;
+  font-weight: 500;
+  border-radius: 6px;
+  border: 1px solid var(--rule);
+  background: var(--panel);
+  color: var(--ink);
+  padding: 0 16px;
+  height: 40px;
+  cursor: pointer;
+}
+
+.btn:hover {
+  border-color: var(--ink-soft);
+}
+
+.btn-primary {
+  background: var(--flow);
+  border-color: var(--flow);
+  color: #fff;
+}
+
+.btn-primary:hover {
+  border-color: var(--flow);
+  filter: brightness(1.05);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ---- Preview card ---------------------------------------------------- */
+
+.preview {
+  display: flex;
+  gap: 16px;
+  margin-top: 16px;
+  padding: 16px;
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+}
+
+/* Rise + fade the card in. Disabled under reduced-motion below. */
+.preview:not(.skeleton):not([hidden]) {
+  animation: rise 120ms ease-out;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.thumb {
+  width: 160px;
+  height: 90px;
+  flex: none;
+  border-radius: 6px;
+  object-fit: cover;
+  background: var(--field);
+  border: 1px solid var(--rule);
+}
+
+.preview-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.title {
+  font-weight: 600;
+  font-size: 15px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.meta {
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.chip {
+  font: inherit;
+  font-size: 12px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--rule);
+  background: var(--field);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.chip .q-note {
+  color: var(--ink-soft);
+  font-size: 11px;
+  margin-left: 6px;
+}
+
+.chip:hover {
+  border-color: var(--ink-soft);
+}
+
+.chip[aria-pressed="true"] {
+  border-color: var(--flow);
+  box-shadow: inset 0 0 0 1px var(--flow);
+}
+
+.chip[aria-pressed="true"] .q-note {
+  color: var(--ink);
+}
+
+.preview-actions {
+  margin-top: 10px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* ---- Skeleton -------------------------------------------------------- */
+
+.skeleton {
+  animation: none;
+}
+
+.skel-thumb,
+.skel-line,
+.skel-chip {
+  background: linear-gradient(
+    90deg,
+    var(--rule) 25%,
+    var(--field) 50%,
+    var(--rule) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.2s infinite;
+  border-radius: 4px;
+}
+
+.skel-thumb {
+  width: 160px;
+  height: 90px;
+  flex: none;
+}
+
+.skel-lines {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.skel-line {
+  height: 14px;
+}
+
+.skel-line.short {
+  width: 40%;
+}
+
+.skel-chips {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.skel-chip {
+  width: 56px;
+  height: 26px;
+}
+
+@keyframes shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.probe-error {
+  margin-top: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--fault);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--fault);
+  font-size: 13px;
+  white-space: pre-line;
+}
+
+/* ---- Queue ----------------------------------------------------------- */
+
+.eyebrow-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 8px;
+  margin-bottom: 4px;
+}
+
+.empty {
+  color: var(--ink-soft);
+  font-size: 13px;
+  padding: 24px 0;
+}
+
+.queue-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.row {
+  position: relative;
+  padding: 12px 12px 14px 20px;
+  border-bottom: 1px solid var(--rule);
+}
+
+/* The gate: a 3px full-height bar on the left edge — the only status marker. */
+.row::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--rule);
+}
+
+.row.running::before {
+  background: var(--flow);
+}
+
+.row.done::before {
+  background: var(--settled);
+}
+
+.row.error::before {
+  background: var(--fault);
+}
+
+.row.cancelled::before {
+  background: var(--ink-soft);
+}
+
+.row-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.row-thumb {
+  width: 44px;
+  height: 44px;
+  flex: none;
+  border-radius: 4px;
+  object-fit: cover;
+  background: var(--field);
+  border: 1px solid var(--rule);
+}
+
+.row-title {
+  flex: 1;
+  min-width: 0;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row-quality {
+  color: var(--ink-soft);
+  font-size: 12px;
+  flex: none;
+}
+
+.row-action {
+  flex: none;
+  background: none;
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  color: var(--ink-soft);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  padding: 3px 9px;
+}
+
+.row-action:hover {
+  border-color: var(--ink-soft);
+  color: var(--ink);
+}
+
+.row-stats {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--ink-soft);
+  min-height: 16px;
+}
+
+.row.error .row-stats {
+  color: var(--fault);
+  white-space: pre-line;
+}
+
+/* ---- Flow meter ------------------------------------------------------ */
+
+.meter {
+  position: relative;
+  height: 6px;
+  margin-top: 8px;
+  border-radius: 3px;
+  overflow: hidden;
+  /* Track plus etched graduation ticks every 10% of the width. */
+  background: var(--rule);
+}
+
+.meter::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    90deg,
+    transparent 0,
+    transparent calc(10% - 1px),
+    var(--field) calc(10% - 1px),
+    var(--field) 10%
+  );
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.meter-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  background: var(--flow);
+  transition: width 200ms linear;
+}
+
+.row.done .meter-fill {
+  background: var(--settled);
+}
+
+.row.error .meter-fill,
+.row.cancelled .meter-fill {
+  background: var(--ink-soft);
+}
+
+/* ---- Footer ---------------------------------------------------------- */
+
+.footer {
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid var(--rule);
+}
+
+.out-dir {
+  background: none;
+  border: none;
+  color: var(--ink-soft);
+  cursor: pointer;
+  font-family: var(--font-data);
+  font-size: 12px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.out-dir:hover {
+  color: var(--ink);
+}
+
+.concurrency {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.concurrency-select {
+  font: inherit;
+  background: var(--panel);
+  color: var(--ink);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 4px 6px;
+}
+
+/* ---- Focus & accessibility ------------------------------------------ */
+
+:focus-visible {
+  outline: 2px solid var(--flow);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .preview,
+  .meter-fill,
+  .skel-thumb,
+  .skel-line,
+  .skel-chip {
+    animation: none;
+    transition: none;
+  }
+}
+
+/* ---- Narrow window --------------------------------------------------- */
+
+@media (max-width: 560px) {
+  .preview {
+    flex-direction: column;
+  }
+
+  .thumb {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 16 / 9;
+  }
+}
