@@ -135,6 +135,10 @@ pub async fn start_download(
 
 /// Kill a running job. Removing the child from state before killing it is what
 /// makes the terminated event read as "cancelled" rather than "failed".
+///
+/// We kill the whole process tree, not just the process we spawned: yt-dlp is a
+/// PyInstaller one-file binary whose bootloader forks a worker child, and
+/// killing only the bootloader leaves that worker downloading to completion.
 #[tauri::command]
 pub fn cancel_download(state: tauri::State<AppState>, id: String) -> Result<(), String> {
     let child = {
@@ -142,7 +146,31 @@ pub fn cancel_download(state: tauri::State<AppState>, id: String) -> Result<(), 
         children.remove(&id)
     };
     if let Some(child) = child {
-        child.kill().map_err(|e| e.to_string())?;
+        kill_tree(child.pid());
+        // Fallback for the bootloader itself; ignore "already dead".
+        let _ = child.kill();
+    }
+    Ok(())
+}
+
+/// Pause a running job by suspending its whole process tree (SIGSTOP). The
+/// process stays alive, so it holds its place and resumes exactly where it left
+/// off — no bytes are re-downloaded.
+#[tauri::command]
+pub fn pause_download(state: tauri::State<AppState>, id: String) -> Result<(), String> {
+    let pid = state.children.lock().unwrap().get(&id).map(|c| c.pid());
+    if let Some(pid) = pid {
+        stop_tree(pid);
+    }
+    Ok(())
+}
+
+/// Resume a paused job (SIGCONT) so its download continues.
+#[tauri::command]
+pub fn resume_download(state: tauri::State<AppState>, id: String) -> Result<(), String> {
+    let pid = state.children.lock().unwrap().get(&id).map(|c| c.pid());
+    if let Some(pid) = pid {
+        cont_tree(pid);
     }
     Ok(())
 }
@@ -386,6 +414,111 @@ fn cleanup_partials(out_dir: &str, outputs: &[String]) {
         }
     }
 }
+
+// ---- Process-tree signalling -----------------------------------------------
+//
+// yt-dlp is a PyInstaller one-file binary: the process we spawn is a bootloader
+// that forks a worker child. Cancel/pause/resume must therefore reach the whole
+// tree, not just the bootloader.
+
+/// Send `signal` to `root` and every process descended from it, leaves first.
+#[cfg(target_os = "linux")]
+fn signal_tree(root: u32, signal: i32) {
+    for pid in process_tree(root).into_iter().rev() {
+        // SAFETY: kill() with a valid signal is always sound; a stale pid simply
+        // returns ESRCH, which we ignore.
+        unsafe { libc::kill(pid as libc::pid_t, signal) };
+    }
+}
+
+/// Freeze the whole tree with SIGSTOP, re-scanning until it stops growing.
+///
+/// This closes a race: a running yt-dlp can fork a new worker between our /proc
+/// snapshot and the signal, and if we killed a parent first the orphan's parent
+/// link would change to init and we'd lose it. A *stopped* process can neither
+/// fork nor exit and keeps its parent, so re-scanning converges on the full
+/// tree with every process held in place.
+#[cfg(target_os = "linux")]
+fn freeze_tree(root: u32) {
+    let mut previous = 0;
+    for _ in 0..5 {
+        let tree = process_tree(root);
+        for &pid in &tree {
+            unsafe { libc::kill(pid as libc::pid_t, libc::SIGSTOP) };
+        }
+        if tree.len() == previous {
+            break;
+        }
+        previous = tree.len();
+    }
+}
+
+/// The pids of `root` and all its descendants, parents before children, read
+/// from a single snapshot of /proc.
+#[cfg(target_os = "linux")]
+fn process_tree(root: u32) -> Vec<u32> {
+    use std::collections::HashMap;
+    let mut children: HashMap<u32, Vec<u32>> = HashMap::new();
+    if let Ok(entries) = std::fs::read_dir("/proc") {
+        for entry in entries.flatten() {
+            if let Ok(pid) = entry.file_name().to_string_lossy().parse::<u32>() {
+                if let Some(ppid) = parent_pid(pid) {
+                    children.entry(ppid).or_default().push(pid);
+                }
+            }
+        }
+    }
+    let mut order = vec![root];
+    let mut i = 0;
+    while i < order.len() {
+        if let Some(kids) = children.get(&order[i]) {
+            order.extend(kids);
+        }
+        i += 1;
+    }
+    order
+}
+
+/// Read a process's parent pid from /proc/<pid>/stat. The `comm` field can hold
+/// spaces and parentheses, so read the fields after the final ')'.
+#[cfg(target_os = "linux")]
+fn parent_pid(pid: u32) -> Option<u32> {
+    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    let tail = stat.rsplit_once(')')?.1;
+    let mut fields = tail.split_whitespace();
+    let _state = fields.next()?;
+    fields.next()?.parse().ok()
+}
+
+#[cfg(target_os = "linux")]
+fn kill_tree(pid: u32) {
+    // Freeze first so nothing can fork away, then kill leaves first. SIGKILL is
+    // delivered to stopped processes too, so no SIGCONT is needed.
+    freeze_tree(pid);
+    signal_tree(pid, libc::SIGKILL);
+}
+#[cfg(target_os = "linux")]
+fn stop_tree(pid: u32) {
+    freeze_tree(pid);
+}
+#[cfg(target_os = "linux")]
+fn cont_tree(pid: u32) {
+    // Every process in the (fully present, still-linked) frozen tree gets resumed.
+    signal_tree(pid, libc::SIGCONT);
+}
+
+// On Windows, taskkill terminates the whole tree. Suspend/resume aren't wired up
+// there yet, so they're no-ops.
+#[cfg(windows)]
+fn kill_tree(pid: u32) {
+    let _ = std::process::Command::new("taskkill")
+        .args(["/F", "/T", "/PID", &pid.to_string()])
+        .output();
+}
+#[cfg(windows)]
+fn stop_tree(_pid: u32) {}
+#[cfg(windows)]
+fn cont_tree(_pid: u32) {}
 
 /// Reduce accumulated stderr to a single readable failure line, with a hint
 /// toward the "Update engine" button when the cause looks like a stale extractor.

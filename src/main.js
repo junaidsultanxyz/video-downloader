@@ -252,15 +252,41 @@ async function startJob(item) {
 }
 
 function cancelItem(item) {
-  if (item.status !== "running") return;
+  if (item.status !== "running" && item.status !== "paused") return;
   // Mark it cancelled immediately so the row updates without waiting; the
-  // backend kills the process and deletes the partial files, then confirms
-  // with dl:done (which is harmless to apply again).
+  // backend kills the whole process tree and deletes the partial files, then
+  // confirms with dl:done (which is harmless to apply again).
   item.status = "cancelled";
   item.stage = "";
   renderRow(item);
   renderActiveCount();
   invoke("cancel_download", { id: item.id }).catch(() => {});
+}
+
+function pauseItem(item) {
+  if (item.status !== "running") return;
+  item.status = "paused";
+  item.stage = "Paused";
+  renderRow(item);
+  renderActiveCount();
+  invoke("pause_download", { id: item.id }).catch(() => {});
+}
+
+function resumeItem(item) {
+  if (item.status !== "paused") return;
+  item.status = "running";
+  item.stage = "Downloading";
+  renderRow(item);
+  renderActiveCount();
+  invoke("resume_download", { id: item.id }).catch(() => {});
+}
+
+// Drop a finished row (done, cancelled or error) from the list.
+function removeItem(item) {
+  const index = queue.indexOf(item);
+  if (index !== -1) queue.splice(index, 1);
+  document.getElementById(`row-${item.id}`)?.remove();
+  el.empty.hidden = queue.length > 0;
 }
 
 // ---- Download event listeners ----------------------------------------
@@ -354,30 +380,58 @@ function buildRow(item) {
     <div class="meter"><div class="meter-fill" style="width:${item.percent}%"></div></div>
   `;
 
-  const action = li.querySelector("[data-action]");
-  if (action) {
-    action.addEventListener("click", () => {
-      if (action.dataset.action === "cancel") cancelItem(item);
-      else if (action.dataset.action === "reveal") revealItem(item);
+  li.querySelectorAll("[data-action]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      switch (btn.dataset.action) {
+        case "pause":
+          pauseItem(item);
+          break;
+        case "resume":
+          resumeItem(item);
+          break;
+        case "cancel":
+          cancelItem(item);
+          break;
+        case "reveal":
+          revealItem(item);
+          break;
+        case "remove":
+          removeItem(item);
+          break;
+      }
     });
-  }
+  });
   return li;
 }
 
+// The buttons shown on a row, grouped, depending on its status.
 function rowAction(item) {
+  const btns = [];
   if (item.status === "running") {
-    return `<button class="row-action" type="button" data-action="cancel">×</button>`;
+    btns.push(actionButton("pause", "Pause"));
+    btns.push(actionButton("cancel", "Cancel"));
+  } else if (item.status === "paused") {
+    btns.push(actionButton("resume", "Resume"));
+    btns.push(actionButton("cancel", "Cancel"));
+  } else if (item.status === "done") {
+    btns.push(actionButton("reveal", "Show in folder"));
+    btns.push(actionButton("remove", "Remove"));
+  } else if (item.status === "cancelled" || item.status === "error") {
+    btns.push(actionButton("remove", "Remove"));
   }
-  if (item.status === "done") {
-    return `<button class="row-action" type="button" data-action="reveal">Show in folder</button>`;
-  }
-  return "";
+  return `<span class="row-actions">${btns.join("")}</span>`;
+}
+
+function actionButton(action, label) {
+  return `<button class="row-action" type="button" data-action="${action}">${label}</button>`;
 }
 
 function statsText(item) {
   switch (item.status) {
     case "running":
       return runningStats(item);
+    case "paused":
+      return `Paused · ${Math.round(item.percent)}%`;
     case "done":
       return "Saved";
     case "cancelled":

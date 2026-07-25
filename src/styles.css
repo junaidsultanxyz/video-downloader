@@ -456,6 +456,10 @@ body {
   background: var(--ink-soft);
 }
 
+.row.paused::before {
+  background: var(--ink-soft);
+}
+
 .row-top {
   display: flex;
   align-items: center;
@@ -502,6 +506,13 @@ body {
 .row-action:hover {
   border-color: var(--ink-soft);
   color: var(--ink);
+}
+
+/* Pause/Resume/Cancel (or Show/Remove) sit together at the row's right edge. */
+.row-actions {
+  flex: none;
+  display: inline-flex;
+  gap: 6px;
 }
 
 .row-stats {
@@ -560,6 +571,12 @@ body {
 .row.error .meter-fill,
 .row.cancelled .meter-fill {
   background: var(--ink-soft);
+}
+
+/* Paused: hold the fill in place but dim it so it reads as "waiting". */
+.row.paused .meter-fill {
+  opacity: 0.45;
+  transition: none;
 }
 
 /* ---- Focus & accessibility ------------------------------------------ */

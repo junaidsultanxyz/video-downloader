@@ -20,6 +20,8 @@ pub fn run() {
             probe::update_engine,
             download::start_download,
             download::cancel_download,
+            download::pause_download,
+            download::resume_download,
             paths::default_output_dir,
             paths::reveal_in_folder,
             paths::pick_folder,
