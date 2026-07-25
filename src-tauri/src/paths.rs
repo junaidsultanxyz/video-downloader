@@ -38,18 +38,30 @@ pub fn reveal_in_folder(app: tauri::AppHandle, path: String) -> Result<(), Strin
 }
 
 /// Open the native folder picker and return the chosen directory, or `None` if
-/// the person cancelled. This is a synchronous command so it runs on its own
-/// thread; `blocking_pick_folder` dispatches the dialog to the UI thread and
-/// waits, which is safe as long as it isn't called from that thread itself.
+/// the person cancelled.
+///
+/// This must be `async`. A synchronous command runs on the main thread, and a
+/// blocking dialog there deadlocks the very event loop that has to render the
+/// dialog — the window freezes (which is worse on KDE, where the dialog goes
+/// through the xdg-desktop portal). An async command runs off the main thread,
+/// so we launch the non-blocking dialog and await its result over a channel.
 #[tauri::command]
-pub fn pick_folder(app: tauri::AppHandle, start_dir: Option<String>) -> Option<String> {
+pub async fn pick_folder(app: tauri::AppHandle, start_dir: Option<String>) -> Option<String> {
     let mut builder = app.dialog().file();
     if let Some(dir) = start_dir.filter(|d| !d.is_empty()) {
         builder = builder.set_directory(dir);
     }
-    builder
-        .blocking_pick_folder()
-        .map(|path| path.to_string())
+
+    let (tx, mut rx) = tauri::async_runtime::channel(1);
+    builder.pick_folder(move |path| {
+        // Runs on the UI thread when the dialog closes; hand the result back.
+        let _ = tx.try_send(path);
+    });
+
+    match rx.recv().await {
+        Some(Some(path)) => Some(path.to_string()),
+        _ => None,
+    }
 }
 
 /// Locate the directory that holds the bundled ffmpeg sidecar so yt-dlp can be
