@@ -40,7 +40,7 @@ try {
 
   # --- Confirm --------------------------------------------------------------
   Write-Host ""
-  Write-Host "Installed to $binDir:"
+  Write-Host "Installed to ${binDir}:"
   Write-Host ("  yt-dlp : " + (& $ytdlp --version))
   Write-Host ("  ffmpeg : " + ((& (Join-Path $binDir "ffmpeg-$triple.exe") -version) | Select-Object -First 1))
 }
