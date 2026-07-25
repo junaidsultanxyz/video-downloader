@@ -39,6 +39,10 @@
             <button id="fetch" class="btn btn-primary" type="button">Fetch</button>
           </div>
 
+          <p class="supported">
+            Supports YouTube, Instagram, Facebook and TikTok — public posts only.
+          </p>
+
           <!-- Skeleton shown while probing -->
           <div id="skeleton" class="preview skeleton" hidden>
             <div class="skel-thumb"></div>
@@ -72,22 +76,6 @@
           <ol id="queue-list" class="queue-list"></ol>
         </section>
       </main>
-
-      <!-- Footer: output dir + concurrency -->
-      <footer class="footer">
-        <button id="out-dir" class="out-dir" type="button" title="Choose a folder">
-          <span id="out-dir-label" class="out-dir-label">~/Videos</span>
-        </button>
-        <label class="concurrency">
-          <span class="eyebrow">Concurrent</span>
-          <select id="concurrency" class="concurrency-select">
-            <option value="1">1</option>
-            <option value="2" selected>2</option>
-            <option value="3">3</option>
-            <option value="4">4</option>
-          </select>
-        </label>
-      </footer>
     </div>
 
     <script type="module" src="main.js"></script>

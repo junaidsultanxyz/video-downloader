@@ -37,6 +37,13 @@
   box-sizing: border-box;
 }
 
+/* `hidden` must always win. Cards use `display: flex`, which otherwise beats the
+   attribute's default `display: none` and leaves the skeleton permanently on
+   screen. */
+[hidden] {
+  display: none !important;
+}
+
 html,
 body {
   margin: 0;
@@ -166,6 +173,12 @@ body {
   color: var(--ink-soft);
 }
 
+.supported {
+  margin: 10px 2px 0;
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
 /* ---- Buttons --------------------------------------------------------- */
 
 .btn {
@@ -259,6 +272,20 @@ body {
 .meta {
   color: var(--ink-soft);
   font-size: 13px;
+}
+
+/* The detected platform, shown once a link is fetched. */
+.platform-badge {
+  display: inline-block;
+  align-self: flex-start;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: var(--flow);
+  background: transparent;
+  border: 1px solid var(--flow);
 }
 
 .chip-row {
@@ -533,50 +560,6 @@ body {
 .row.error .meter-fill,
 .row.cancelled .meter-fill {
   background: var(--ink-soft);
-}
-
-/* ---- Footer ---------------------------------------------------------- */
-
-.footer {
-  height: 48px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-top: 1px solid var(--rule);
-}
-
-.out-dir {
-  background: none;
-  border: none;
-  color: var(--ink-soft);
-  cursor: pointer;
-  font-family: var(--font-data);
-  font-size: 12px;
-  padding: 4px 6px;
-  border-radius: 6px;
-  max-width: 60%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.out-dir:hover {
-  color: var(--ink);
-}
-
-.concurrency {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.concurrency-select {
-  font: inherit;
-  background: var(--panel);
-  color: var(--ink);
-  border: 1px solid var(--rule);
-  border-radius: 6px;
-  padding: 4px 6px;
 }
 
 /* ---- Focus & accessibility ------------------------------------------ */

@@ -4,11 +4,20 @@
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 
+// The fixed set of options offered for every link, in display order. Ids are the
+// tokens the backend understands: "vbest", "v<height>", or "audio:<format>".
+const OPTIONS = [
+  { id: "vbest", label: "Best" },
+  { id: "v1080", label: "1080p mp4" },
+  { id: "v720", label: "720p mp4" },
+  { id: "v480", label: "480p mp4" },
+  { id: "audio:mp3", label: "Audio only" },
+];
+
 // ---- State ------------------------------------------------------------
 
-/** @type {Array<QueueItem>} */
 const queue = [];
-let preview = null; // the currently previewed MediaInfo, or null
+let preview = null; // the currently previewed media, or null
 let selectedQuality = null; // { id, label } chosen in the preview card
 
 const settings = loadSettings();
@@ -26,9 +35,6 @@ const el = {
   activeCount: document.getElementById("active-count"),
   engine: document.getElementById("engine"),
   engineLabel: document.getElementById("engine-label"),
-  outDir: document.getElementById("out-dir"),
-  outDirLabel: document.getElementById("out-dir-label"),
-  concurrency: document.getElementById("concurrency"),
 };
 
 // ---- Settings ---------------------------------------------------------
@@ -41,8 +47,8 @@ function loadSettings() {
     stored = {};
   }
   return {
-    outDir: stored.outDir || "",
-    concurrency: stored.concurrency || 2,
+    // Where the save dialog opens next time, and the last option picked.
+    lastDir: stored.lastDir || "",
     defaultQuality: stored.defaultQuality || "vbest",
   };
 }
@@ -54,18 +60,15 @@ function saveSettings() {
 // ---- Init -------------------------------------------------------------
 
 async function init() {
-  // Resolve a default output folder when none is remembered yet.
-  if (!settings.outDir) {
+  // Seed the save dialog's starting folder with the OS default the first time.
+  if (!settings.lastDir) {
     try {
-      settings.outDir = await invoke("default_output_dir");
+      settings.lastDir = await invoke("default_output_dir");
       saveSettings();
     } catch {
-      /* leave blank; the picker still works */
+      /* leave blank; the dialog still opens */
     }
   }
-  el.outDirLabel.textContent = prettyPath(settings.outDir) || "Choose a folder";
-
-  el.concurrency.value = String(settings.concurrency);
 
   wireEvents();
   await wireDownloadListeners();
@@ -80,16 +83,7 @@ function wireEvents() {
     if (e.key === "Enter") fetchUrl();
     if (e.key === "Escape") dismissPreview();
   });
-
   el.engine.addEventListener("click", updateEngine);
-
-  el.outDir.addEventListener("click", chooseFolder);
-
-  el.concurrency.addEventListener("change", () => {
-    settings.concurrency = Number(el.concurrency.value);
-    saveSettings();
-    pump();
-  });
 }
 
 // ---- Probe ------------------------------------------------------------
@@ -100,7 +94,7 @@ async function fetchUrl() {
 
   dismissPreview();
   el.probeError.hidden = true;
-  el.skeleton.hidden = false;
+  el.skeleton.hidden = false; // shown only while this probe is in flight
   el.fetch.disabled = true;
 
   try {
@@ -123,18 +117,23 @@ function dismissPreview() {
   el.preview.innerHTML = "";
 }
 
+// Map yt-dlp's extractor key to a friendly platform name.
+function platformName(extractor) {
+  const e = (extractor || "").toLowerCase();
+  if (e.includes("youtube")) return "YouTube";
+  if (e.includes("tiktok")) return "TikTok";
+  if (e.includes("instagram")) return "Instagram";
+  if (e.includes("facebook")) return "Facebook";
+  return extractor || "Unknown source";
+}
+
 function renderPreview() {
   if (!preview) return;
 
-  // Prefer the remembered default quality when it's on offer.
+  // Pre-select the last-used option when it's in the list.
   const preferred =
-    preview.qualities.find((q) => q.id === settings.defaultQuality) ||
-    preview.qualities[0];
-  selectedQuality = { id: preferred.id, label: preferred.label };
-
-  const card = document.createElement("div");
-  card.className = "preview-inner";
-  card.style.display = "contents";
+    OPTIONS.find((o) => o.id === settings.defaultQuality) || OPTIONS[0];
+  selectedQuality = { ...preferred };
 
   const thumb = preview.thumbnail
     ? `<img class="thumb" src="${escapeAttr(preview.thumbnail)}" alt="" />`
@@ -146,64 +145,60 @@ function renderPreview() {
   else if (preview.duration > 0)
     metaBits.push(`<span class="duration">${formatDuration(preview.duration)}</span>`);
 
-  const videoChips = preview.qualities
-    .map((q) => qualityChip(q))
-    .join("");
-
-  const audioChips = ["mp3", "m4a", "opus"]
-    .map(
-      (fmt) =>
-        `<button class="chip" type="button" role="button" aria-pressed="false"
-           data-quality="audio:${fmt}" data-label="${fmt.toUpperCase()}">${fmt.toUpperCase()}</button>`
-    )
-    .join("");
+  const chips = OPTIONS.map(
+    (o) =>
+      `<button class="chip" type="button" role="button" aria-pressed="false"
+         data-quality="${escapeAttr(o.id)}" data-label="${escapeAttr(
+        o.label
+      )}">${escapeHtml(o.label)}</button>`
+  ).join("");
 
   el.preview.innerHTML = `
     ${thumb}
     <div class="preview-body">
+      <span class="platform-badge">${escapeHtml(platformName(preview.extractor))}</span>
       <div class="title">${escapeHtml(preview.title)}</div>
       <div class="meta">${metaBits.join(" · ")}</div>
-      <div class="chip-row" data-group="video">${videoChips}</div>
-      <div class="chip-row" data-group="audio">${audioChips}</div>
+      <div class="chip-row">${chips}</div>
       <div class="preview-actions">
-        <button id="add" class="btn btn-primary" type="button">Add to queue</button>
+        <button id="download" class="btn btn-primary" type="button">Download</button>
       </div>
     </div>
   `;
   el.preview.hidden = false;
 
   // Reflect the pre-selected chip and wire chip toggling.
-  const chips = el.preview.querySelectorAll(".chip");
-  chips.forEach((chip) => {
+  const chipEls = el.preview.querySelectorAll(".chip");
+  chipEls.forEach((chip) => {
     if (chip.dataset.quality === selectedQuality.id) {
       chip.setAttribute("aria-pressed", "true");
     }
     chip.addEventListener("click", () => {
-      chips.forEach((c) => c.setAttribute("aria-pressed", "false"));
+      chipEls.forEach((c) => c.setAttribute("aria-pressed", "false"));
       chip.setAttribute("aria-pressed", "true");
       selectedQuality = { id: chip.dataset.quality, label: chip.dataset.label };
     });
   });
 
-  el.preview.querySelector("#add").addEventListener("click", addToQueue);
+  el.preview.querySelector("#download").addEventListener("click", download);
 }
 
-function qualityChip(q) {
-  const note = q.note
-    ? `<span class="q-note">${escapeHtml(q.note)}</span>`
-    : "";
-  return `<button class="chip" type="button" role="button" aria-pressed="false"
-      data-quality="${escapeAttr(q.id)}" data-label="${escapeAttr(q.label)}">${escapeHtml(
-    q.label
-  )}${note}</button>`;
-}
+// ---- Download ---------------------------------------------------------
 
-// ---- Queue ------------------------------------------------------------
-
-function addToQueue() {
+async function download() {
   if (!preview || !selectedQuality) return;
 
-  // Remember the choice so the next paste pre-selects it.
+  // Ask where to save, every time — the native folder picker.
+  let dir;
+  try {
+    dir = await invoke("pick_folder", { startDir: settings.lastDir });
+  } catch (err) {
+    console.error(err);
+    return;
+  }
+  if (typeof dir !== "string" || !dir) return; // dialog cancelled
+
+  settings.lastDir = dir;
   settings.defaultQuality = selectedQuality.id;
   saveSettings();
 
@@ -214,42 +209,25 @@ function addToQueue() {
     thumb: preview.thumbnail,
     quality: selectedQuality.id,
     qualityLabel: selectedQuality.label,
-    status: "queued",
+    outDir: dir,
+    status: "running", // no concurrency cap — each download starts at once
     percent: 0,
     speed: "",
     eta: "",
     size: "",
-    stage: "",
+    stage: "Starting",
     path: null,
     error: null,
   };
   queue.push(item);
 
   // Clear the input for the next paste but keep the preview card up so another
-  // quality of the same video can be queued immediately.
+  // quality of the same video can be downloaded immediately.
   el.url.value = "";
   el.url.focus();
 
   renderList();
-  pump();
-}
-
-// Promote queued items into running jobs while under the concurrency limit.
-function pump() {
-  const running = queue.filter((i) => i.status === "running").length;
-  let slots = settings.concurrency - running;
-  if (slots <= 0) return;
-
-  for (const item of queue) {
-    if (slots <= 0) break;
-    if (item.status !== "queued") continue;
-    item.status = "running";
-    item.stage = "Starting";
-    slots -= 1;
-    startJob(item);
-    renderRow(item);
-  }
-  renderActiveCount();
+  startJob(item);
 }
 
 async function startJob(item) {
@@ -259,7 +237,7 @@ async function startJob(item) {
         id: item.id,
         url: item.url,
         quality: item.quality,
-        out_dir: settings.outDir,
+        out_dir: item.outDir,
       },
     });
   } catch (err) {
@@ -269,18 +247,20 @@ async function startJob(item) {
       item.error = String(err);
       renderRow(item);
       renderActiveCount();
-      pump();
     }
   }
 }
 
 function cancelItem(item) {
-  if (item.status === "running") {
-    invoke("cancel_download", { id: item.id }).catch(() => {});
-  } else if (item.status === "queued") {
-    item.status = "cancelled";
-    renderRow(item);
-  }
+  if (item.status !== "running") return;
+  // Mark it cancelled immediately so the row updates without waiting; the
+  // backend kills the process and deletes the partial files, then confirms
+  // with dl:done (which is harmless to apply again).
+  item.status = "cancelled";
+  item.stage = "";
+  renderRow(item);
+  renderActiveCount();
+  invoke("cancel_download", { id: item.id }).catch(() => {});
 }
 
 // ---- Download event listeners ----------------------------------------
@@ -316,7 +296,6 @@ async function wireDownloadListeners() {
     }
     renderRow(item);
     renderActiveCount();
-    pump();
   });
 }
 
@@ -386,7 +365,7 @@ function buildRow(item) {
 }
 
 function rowAction(item) {
-  if (item.status === "running" || item.status === "queued") {
+  if (item.status === "running") {
     return `<button class="row-action" type="button" data-action="cancel">×</button>`;
   }
   if (item.status === "done") {
@@ -399,8 +378,6 @@ function statsText(item) {
   switch (item.status) {
     case "running":
       return runningStats(item);
-    case "queued":
-      return "Queued";
     case "done":
       return "Saved";
     case "cancelled":
@@ -425,7 +402,7 @@ function revealItem(item) {
   if (item.path) invoke("reveal_in_folder", { path: item.path }).catch(() => {});
 }
 
-// ---- Engine + folder --------------------------------------------------
+// ---- Engine -----------------------------------------------------------
 
 async function refreshEngine() {
   try {
@@ -453,19 +430,6 @@ async function updateEngine() {
   }
 }
 
-async function chooseFolder() {
-  try {
-    const dir = await invoke("pick_folder", { startDir: settings.outDir });
-    if (typeof dir === "string" && dir) {
-      settings.outDir = dir;
-      saveSettings();
-      el.outDirLabel.textContent = prettyPath(dir);
-    }
-  } catch (err) {
-    console.error(err);
-  }
-}
-
 // ---- Helpers ----------------------------------------------------------
 
 function formatDuration(seconds) {
@@ -475,14 +439,6 @@ function formatDuration(seconds) {
   const sec = s % 60;
   const pad = (n) => String(n).padStart(2, "0");
   return h > 0 ? `${h}:${pad(m)}:${pad(sec)}` : `${m}:${pad(sec)}`;
-}
-
-function prettyPath(path) {
-  if (!path) return "";
-  // Collapse the home directory to ~ for a tidier footer.
-  const home = path.match(/^(\/home\/[^/]+|\/Users\/[^/]+|C:\\Users\\[^\\]+)/);
-  if (home) return path.replace(home[0], "~");
-  return path;
 }
 
 function escapeHtml(str) {

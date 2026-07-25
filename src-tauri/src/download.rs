@@ -72,13 +72,23 @@ pub async fn start_download(
     let mut tracker = ProgressTracker::default();
     let mut stderr_tail = String::new();
     let mut final_path: Option<String> = None;
+    // Every path yt-dlp writes to (streams, merge target, extracted audio), so a
+    // cancelled job can delete the half-written files it leaves behind.
+    let mut outputs: Vec<String> = Vec::new();
 
     while let Some(event) = rx.recv().await {
         match event {
             CommandEvent::Stdout(bytes) => {
                 let line = String::from_utf8_lossy(&bytes);
                 let line = line.trim_end();
-                handle_stdout_line(&app, &request.id, line, &mut tracker, &mut final_path);
+                handle_stdout_line(
+                    &app,
+                    &request.id,
+                    line,
+                    &mut tracker,
+                    &mut final_path,
+                    &mut outputs,
+                );
             }
             CommandEvent::Stderr(bytes) => {
                 append_bounded(&mut stderr_tail, &String::from_utf8_lossy(&bytes));
@@ -93,7 +103,10 @@ pub async fn start_download(
 
                 let ok = payload.code == Some(0);
                 let done = if !was_present {
-                    // Cancelled jobs surface as cancelled, not as an error.
+                    // Cancelled jobs surface as cancelled, not as an error — and
+                    // leave nothing behind: SIGKILL denies yt-dlp its own cleanup,
+                    // so we remove the partial stream/fragment files ourselves.
+                    cleanup_partials(&request.out_dir, &outputs);
                     Done { id: request.id.clone(), ok: false, path: None, error: None }
                 } else if ok {
                     Done {
@@ -168,7 +181,16 @@ fn handle_stdout_line(
     line: &str,
     tracker: &mut ProgressTracker,
     final_path: &mut Option<String>,
+    outputs: &mut Vec<String>,
 ) {
+    // Record a path as both the current final path and a cleanup candidate.
+    let mut record = |path: String| {
+        if !outputs.contains(&path) {
+            outputs.push(path.clone());
+        }
+        *final_path = Some(path);
+    };
+
     if let Some(rest) = line.strip_prefix(PROGRESS_SENTINEL) {
         // Fields: percent | speed | eta | total_bytes | total_bytes_estimate
         let fields: Vec<&str> = rest.split('|').collect();
@@ -211,7 +233,7 @@ fn handle_stdout_line(
         } else {
             tracker.enter_stage("Downloading");
         }
-        *final_path = Some(path.trim().to_string());
+        record(path.trim().to_string());
         return;
     }
 
@@ -219,7 +241,7 @@ fn handle_stdout_line(
         // e.g. "[download] /path/to/file has already been downloaded"
         if let Some(rest) = line.strip_prefix("[download] ") {
             if let Some(path) = rest.split(" has already been downloaded").next() {
-                *final_path = Some(path.trim().to_string());
+                record(path.trim().to_string());
             }
         }
         return;
@@ -229,14 +251,14 @@ fn handle_stdout_line(
         tracker.enter_stage("Merging");
         // "[Merger] Merging formats into \"/path/to/file.mp4\""
         if let Some(path) = between_quotes(line) {
-            *final_path = Some(path);
+            record(path);
         }
         return;
     }
 
     if let Some(path) = line.strip_prefix("[ExtractAudio] Destination: ") {
         tracker.enter_stage("Converting");
-        *final_path = Some(path.trim().to_string());
+        record(path.trim().to_string());
         return;
     }
 
@@ -334,6 +356,34 @@ fn append_bounded(buffer: &mut String, chunk: &str) {
             cut += 1;
         }
         *buffer = buffer[cut..].to_string();
+    }
+}
+
+/// Delete the half-written files a cancelled job leaves behind. For each path
+/// yt-dlp reported writing to, remove that file and every sibling whose name
+/// begins with it — covering `.part`, `.part-FragN`, and `.ytdl` temp files —
+/// while leaving other jobs' downloads in the same folder untouched.
+fn cleanup_partials(out_dir: &str, outputs: &[String]) {
+    use std::path::Path;
+    for output in outputs {
+        let path = Path::new(output);
+        let resolved = if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            Path::new(out_dir).join(path)
+        };
+        let (Some(dir), Some(name)) = (resolved.parent(), resolved.file_name()) else {
+            continue;
+        };
+        let name = name.to_string_lossy();
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            continue;
+        };
+        for entry in entries.filter_map(Result::ok) {
+            if entry.file_name().to_string_lossy().starts_with(name.as_ref()) {
+                let _ = std::fs::remove_file(entry.path());
+            }
+        }
     }
 }
 
