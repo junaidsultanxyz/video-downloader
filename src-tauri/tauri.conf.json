@@ -23,7 +23,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["deb", "appimage", "nsis"],
+    "targets": ["rpm", "appimage", "nsis"],
     "externalBin": ["binaries/yt-dlp", "binaries/ffmpeg"],
     "icon": [
       "icons/32x32.png",

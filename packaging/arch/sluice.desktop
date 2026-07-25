@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Sluice
+Comment=Download public videos from YouTube, Instagram, Facebook and TikTok
+Exec=sluice
+Icon=sluice
+Terminal=false
+Categories=AudioVideo;Utility;Network;

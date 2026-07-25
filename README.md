@@ -23,16 +23,28 @@ is one window.
 
 ### 1. Prerequisites
 
-**Linux** build dependencies:
+Every platform needs a [Rust toolchain](https://rustup.rs). The build
+dependencies then differ by OS.
 
+**Arch Linux**
+
+```bash
+sudo pacman -S --needed \
+  webkit2gtk-4.1 base-devel curl wget file openssl librsvg
 ```
-sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev patchelf build-essential
+
+**Fedora**
+
+```bash
+sudo dnf install \
+  webkit2gtk4.1-devel gtk3-devel librsvg2-devel openssl-devel \
+  curl wget file patchelf
+sudo dnf group install "c-development"
 ```
 
-**Windows** needs the MSVC build tools and WebView2. WebView2 ships with
-Windows 11; on Windows 10 install it from Microsoft's Evergreen distributable.
-
-Both platforms need a [Rust toolchain](https://rustup.rs).
+**Windows** needs the [Microsoft C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/)
+and WebView2. WebView2 ships with Windows 11; on Windows 10 install it from
+Microsoft's Evergreen distributable.
 
 ### 2. Fetch the sidecars
 
@@ -51,12 +63,33 @@ powershell -ExecutionPolicy Bypass -File scripts\fetch-binaries.ps1
 
 Each script prints the resolved `yt-dlp` and `ffmpeg` versions when it finishes.
 
-### 3. Run
+### 3. Run and build
 
 ```bash
 npx @tauri-apps/cli dev      # development, with live reload of the frontend
-npx @tauri-apps/cli build    # produce installers (deb, AppImage, NSIS)
+npx @tauri-apps/cli build    # produce installers for the current OS
 ```
+
+A build only produces artifacts for the OS it runs on. What each platform gets:
+
+| Platform | Artifact | Where it lands |
+|----------|----------|----------------|
+| **Fedora** | `.rpm` | `src-tauri/target/release/bundle/rpm/` |
+| **Arch** (and any glibc Linux) | AppImage | `src-tauri/target/release/bundle/appimage/` |
+| **Windows** | NSIS `-setup.exe` | `src-tauri\target\release\bundle\nsis\` |
+
+Notes:
+
+- **Fedora** gets a native `.rpm` — install it with `sudo dnf install ./Sluice-*.rpm`.
+- **Arch** has no native Tauri bundler, so the AppImage is the portable choice
+  (`chmod +x` it and run). For a true pacman package, use `packaging/arch/PKGBUILD`:
+  `cd packaging/arch && makepkg -si`. It links Arch's own `yt-dlp` and `ffmpeg`
+  packages instead of bundling them, so the engine updates through pacman rather
+  than the in-app button.
+- **Windows** installers must be built on Windows — Tauri cannot cross-compile
+  the WebView2 target from Linux. To produce all three from one place without a
+  Windows machine, build on CI (an Ubuntu runner yields the rpm and AppImage, a
+  Windows runner yields the NSIS installer).
 
 ## Keeping the engine current
 
