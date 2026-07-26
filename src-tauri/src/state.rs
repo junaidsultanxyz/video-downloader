@@ -12,4 +12,12 @@ use tauri_plugin_shell::process::CommandChild;
 #[derive(Default)]
 pub struct AppState {
     pub children: Mutex<HashMap<String, CommandChild>>,
+
+    /// Windows only: the Job Object each yt-dlp process is assigned to, keyed by
+    /// the same queue item id. Killing the job tears down the whole process tree
+    /// — including yt-dlp's PyInstaller worker child, which parent-PID based
+    /// kills do not reliably reach. Stored as the raw `HANDLE` value (`isize`)
+    /// because a `HANDLE` pointer is not `Send`.
+    #[cfg(windows)]
+    pub jobs: Mutex<HashMap<String, isize>>,
 }

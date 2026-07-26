@@ -70,12 +70,31 @@ pub async fn start_download(
         .spawn()
         .map_err(|e| format!("The download engine didn't start: {e}"))?;
 
+    // On Windows, capture the pid before the child moves into shared state so we
+    // can put the process in a Job Object below.
+    #[cfg(windows)]
+    let job_pid = child.pid();
+
     // Register the child so `cancel_download` can find and kill it. The lock is
     // released immediately — it must never be held across an `.await`.
     {
         let state = app.state::<AppState>();
         let mut children = state.children.lock().unwrap();
         children.insert(request.id.clone(), child);
+    }
+
+    // Windows: assign the process to a Job Object right away. Any child it later
+    // spawns (the PyInstaller worker, and ffmpeg during a merge) is created into
+    // the same job, so cancelling can kill the entire tree at once — something
+    // parent-PID based kills miss, leaving the worker downloading to the file we
+    // are trying to delete. We do this immediately after spawn, before the
+    // bootloader finishes unpacking and launches its worker, so nothing escapes.
+    #[cfg(windows)]
+    {
+        if let Some(job) = create_job_for(job_pid) {
+            let state = app.state::<AppState>();
+            state.jobs.lock().unwrap().insert(request.id.clone(), job);
+        }
     }
 
     let mut tracker = ProgressTracker::default();
@@ -109,6 +128,18 @@ pub async fn start_download(
                     let mut children = state.children.lock().unwrap();
                     children.remove(&request.id).is_some()
                 };
+
+                // Release this job's Job Object. On a normal finish the process
+                // has already exited, so this just closes the handle; on cancel
+                // it was already taken and killed by `cancel_download`.
+                #[cfg(windows)]
+                {
+                    let state = app.state::<AppState>();
+                    let job = state.jobs.lock().unwrap().remove(&request.id);
+                    if let Some(job) = job {
+                        close_job(job);
+                    }
+                }
 
                 let ok = payload.code == Some(0);
                 let done = if !was_present {
@@ -148,6 +179,8 @@ pub async fn start_download(
 /// We kill the whole process tree, not just the process we spawned: yt-dlp is a
 /// PyInstaller one-file binary whose bootloader forks a worker child, and
 /// killing only the bootloader leaves that worker downloading to completion.
+/// On Windows the reliable way to reach that worker is the Job Object the
+/// process was assigned to at startup; the process-tree kill is a fallback.
 #[tauri::command]
 pub async fn cancel_download(
     state: tauri::State<'_, AppState>,
@@ -157,18 +190,35 @@ pub async fn cancel_download(
         let mut children = state.children.lock().unwrap();
         children.remove(&id)
     };
+    // Take this job's Job Object so we can terminate the whole tree at once.
+    #[cfg(windows)]
+    let job = state.jobs.lock().unwrap().remove(&id);
+
     if let Some(child) = child {
         let pid = child.pid();
-        // Killing the tree waits for every process to exit (on Windows, so its
-        // file handles are freed before we delete the partial file). That wait
-        // must not run on the main thread, so do it on a blocking worker.
+        // The kill (and, on Windows, the wait for every process to exit so its
+        // file handles are freed before we delete the partial file) must not run
+        // on the main thread, so do it on a blocking worker.
         tauri::async_runtime::spawn_blocking(move || {
+            // Windows: terminate the Job Object first — this is what reaches the
+            // PyInstaller worker child that keeps the partial file open. The
+            // tree-terminate below is a fallback for anything not in the job.
+            #[cfg(windows)]
+            if let Some(job) = job {
+                kill_job(job);
+            }
             kill_tree(pid);
             // Fallback for the bootloader itself; ignore "already dead".
             let _ = child.kill();
         })
         .await
         .map_err(|e| e.to_string())?;
+    } else {
+        // The child already terminated on its own, but close any lingering job.
+        #[cfg(windows)]
+        if let Some(job) = job {
+            close_job(job);
+        }
     }
     Ok(())
 }
@@ -563,15 +613,83 @@ fn cont_tree(pid: u32) {
     signal_tree(pid, libc::SIGCONT);
 }
 
-// Windows has no signals. For cancel we terminate every process in the tree; for
-// pause/resume we suspend and resume every thread of every process in the tree.
-// yt-dlp.exe is likewise a PyInstaller one-file binary that launches a worker
-// child, so the tree — not just the process we spawned — must be reached.
-//
-// We terminate the enumerated tree ourselves rather than shelling out to
-// `taskkill /T`: taskkill did not reliably reach the worker child here, so the
-// download kept running to completion. Enumerating the tree is the same
-// mechanism pause/resume already use successfully on Windows.
+// Windows has no signals. Cancel is driven by the Job Object each process is
+// assigned to at startup (see `create_job_for`); killing the job reaches yt-dlp's
+// PyInstaller worker child reliably, which parent-PID walking does not. The
+// process-tree terminate below is a fallback. Pause/resume suspend and resume
+// every thread of every process in the tree.
+
+/// Create a Job Object, assign the process `pid` to it, and return the job's raw
+/// `HANDLE` as an `isize`. Any process the assigned process later spawns joins
+/// the same job automatically, so terminating the job kills the whole tree.
+/// Returns `None` if the job could not be created or assigned (cancel then falls
+/// back to the process-tree terminate).
+#[cfg(windows)]
+fn create_job_for(pid: u32) -> Option<isize> {
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::System::JobObjects::{
+        AssignProcessToJobObject, CreateJobObjectW, SetInformationJobObject,
+        JobObjectExtendedLimitInformation, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+    };
+    use windows_sys::Win32::System::Threading::{
+        OpenProcess, PROCESS_SET_QUOTA, PROCESS_TERMINATE,
+    };
+
+    unsafe {
+        let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
+        if job.is_null() {
+            return None;
+        }
+        // Kill everything left in the job when its last handle closes, so a job
+        // that outlives a crash or a missed cleanup can't leak live processes.
+        let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
+        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        SetInformationJobObject(
+            job,
+            JobObjectExtendedLimitInformation,
+            &info as *const _ as *const _,
+            std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+        );
+
+        let proc = OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE, 0, pid);
+        if proc.is_null() {
+            CloseHandle(job);
+            return None;
+        }
+        let assigned = AssignProcessToJobObject(job, proc) != 0;
+        CloseHandle(proc);
+        if !assigned {
+            CloseHandle(job);
+            return None;
+        }
+        Some(job as isize)
+    }
+}
+
+/// Terminate every process in a Job Object and close the handle.
+#[cfg(windows)]
+fn kill_job(job: isize) {
+    use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
+    use windows_sys::Win32::System::JobObjects::TerminateJobObject;
+    unsafe {
+        let handle = job as HANDLE;
+        TerminateJobObject(handle, 1);
+        CloseHandle(handle);
+    }
+}
+
+/// Close a Job Object handle without an explicit terminate — used when the
+/// process has already exited on its own. With kill-on-close set, this still
+/// reaps anything unexpectedly left in the job.
+#[cfg(windows)]
+fn close_job(job: isize) {
+    use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
+    unsafe {
+        CloseHandle(job as HANDLE);
+    }
+}
+
 #[cfg(windows)]
 fn kill_tree(root: u32) {
     use windows_sys::Win32::Foundation::CloseHandle;
