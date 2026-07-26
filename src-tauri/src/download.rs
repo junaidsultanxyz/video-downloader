@@ -149,15 +149,26 @@ pub async fn start_download(
 /// PyInstaller one-file binary whose bootloader forks a worker child, and
 /// killing only the bootloader leaves that worker downloading to completion.
 #[tauri::command]
-pub fn cancel_download(state: tauri::State<AppState>, id: String) -> Result<(), String> {
+pub async fn cancel_download(
+    state: tauri::State<'_, AppState>,
+    id: String,
+) -> Result<(), String> {
     let child = {
         let mut children = state.children.lock().unwrap();
         children.remove(&id)
     };
     if let Some(child) = child {
-        kill_tree(child.pid());
-        // Fallback for the bootloader itself; ignore "already dead".
-        let _ = child.kill();
+        let pid = child.pid();
+        // Killing the tree waits for every process to exit (on Windows, so its
+        // file handles are freed before we delete the partial file). That wait
+        // must not run on the main thread, so do it on a blocking worker.
+        tauri::async_runtime::spawn_blocking(move || {
+            kill_tree(pid);
+            // Fallback for the bootloader itself; ignore "already dead".
+            let _ = child.kill();
+        })
+        .await
+        .map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -437,8 +448,25 @@ fn cleanup_partials(out_dir: &str, outputs: &[String]) {
         };
         for entry in entries.filter_map(Result::ok) {
             if entry.file_name().to_string_lossy().starts_with(name.as_ref()) {
-                let _ = std::fs::remove_file(entry.path());
+                remove_file_retrying(&entry.path());
             }
+        }
+    }
+}
+
+/// Delete a file, retrying briefly on Windows. A process killed a moment ago can
+/// still hold its file handle for a short while after it exits, and Windows
+/// refuses to delete an open file; a few short retries clear that window. On
+/// other platforms the first attempt is authoritative.
+fn remove_file_retrying(path: &std::path::Path) {
+    for attempt in 0..10u32 {
+        match std::fs::remove_file(path) {
+            Ok(()) => return,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return,
+            Err(_) if cfg!(windows) => {
+                std::thread::sleep(std::time::Duration::from_millis(50 * u64::from(attempt + 1)));
+            }
+            Err(_) => return,
         }
     }
 }
@@ -535,15 +563,38 @@ fn cont_tree(pid: u32) {
     signal_tree(pid, libc::SIGCONT);
 }
 
-// Windows has no signals. taskkill /T terminates the whole tree for cancel; for
+// Windows has no signals. For cancel we terminate every process in the tree; for
 // pause/resume we suspend and resume every thread of every process in the tree.
 // yt-dlp.exe is likewise a PyInstaller one-file binary that launches a worker
 // child, so the tree — not just the process we spawned — must be reached.
+//
+// We terminate the enumerated tree ourselves rather than shelling out to
+// `taskkill /T`: taskkill did not reliably reach the worker child here, so the
+// download kept running to completion. Enumerating the tree is the same
+// mechanism pause/resume already use successfully on Windows.
 #[cfg(windows)]
-fn kill_tree(pid: u32) {
-    let _ = std::process::Command::new("taskkill")
-        .args(["/F", "/T", "/PID", &pid.to_string()])
-        .output();
+fn kill_tree(root: u32) {
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::System::Threading::{
+        OpenProcess, TerminateProcess, WaitForSingleObject, PROCESS_SYNCHRONIZE, PROCESS_TERMINATE,
+    };
+
+    // Leaves first, so a worker can't be orphaned and outlive its parent.
+    for pid in process_tree(root).into_iter().rev() {
+        unsafe {
+            let handle = OpenProcess(PROCESS_TERMINATE | PROCESS_SYNCHRONIZE, 0, pid);
+            if handle.is_null() {
+                continue;
+            }
+            TerminateProcess(handle, 1);
+            // Wait for the process to finish exiting so Windows releases the file
+            // handles it held; then the partial file can be deleted right away
+            // instead of being found locked. Bounded so a stuck process can't
+            // hang the cancel forever.
+            WaitForSingleObject(handle, 5000);
+            CloseHandle(handle);
+        }
+    }
 }
 
 #[cfg(windows)]
