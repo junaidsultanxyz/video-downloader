@@ -16,6 +16,11 @@ pub struct MediaInfo {
     /// The yt-dlp extractor key, e.g. "youtube" or "tiktok".
     pub extractor: String,
     pub is_live: bool,
+    /// True when the media is served as many small segments (a past or current
+    /// livestream, or an HLS/DASH-segmented stream) rather than one file. These
+    /// download far more slowly — hundreds of separate requests — so the UI
+    /// warns about it.
+    pub fragmented: bool,
     pub qualities: Vec<QualityOption>,
 }
 
@@ -29,13 +34,6 @@ pub struct QualityOption {
     /// A short human note such as "mp4 · ~124 MB". Sizes carry a leading `~`
     /// because DASH video streams exclude audio, so the merged size is larger.
     pub note: String,
-}
-
-/// A single distinct height gathered while walking the `formats` array. We keep
-/// the largest file size seen at that height and the container it came in.
-struct HeightInfo {
-    filesize: Option<f64>,
-    ext: String,
 }
 
 /// Probe a URL and return its previewable metadata. Runs the bundled yt-dlp
@@ -118,6 +116,7 @@ fn parse_media_info(json: &Value) -> MediaInfo {
         .unwrap_or("")
         .to_string();
     let is_live = json.get("is_live").and_then(Value::as_bool).unwrap_or(false);
+    let fragmented = is_fragmented(json);
 
     let qualities = derive_qualities(json);
 
@@ -128,16 +127,41 @@ fn parse_media_info(json: &Value) -> MediaInfo {
         duration,
         extractor,
         is_live,
+        fragmented,
         qualities,
     }
 }
 
-/// Build the quality menu from the `formats` array. We collapse the raw formats
-/// down to one entry per distinct video height, keeping the largest known file
-/// size at each. When no usable formats are present we return a fixed ladder so
+/// Decide whether a source is delivered in segments. A past livestream is the
+/// obvious case (`was_live`), but any video format whose transport is DASH
+/// segments or HLS is fragmented too — that is what makes a small file crawl.
+fn is_fragmented(json: &Value) -> bool {
+    if json.get("was_live").and_then(Value::as_bool).unwrap_or(false)
+        || json.get("is_live").and_then(Value::as_bool).unwrap_or(false)
+    {
+        return true;
+    }
+    json.get("formats")
+        .and_then(Value::as_array)
+        .is_some_and(|formats| {
+            formats.iter().any(|format| {
+                format.get("vcodec").and_then(Value::as_str) != Some("none")
+                    && format
+                        .get("protocol")
+                        .and_then(Value::as_str)
+                        .is_some_and(|p| p.contains("dash_segments") || p.contains("m3u8"))
+            })
+        })
+}
+
+/// Build the quality menu from the `formats` array — one entry per distinct
+/// video height, sharpest first, each keeping the largest known file size at
+/// that height. Every option merges to mp4, so notes read as "mp4 · ~size".
+/// When a source exposes no per-height formats we fall back to a fixed ladder so
 /// single-URL extractors still offer sensible choices.
 fn derive_qualities(json: &Value) -> Vec<QualityOption> {
-    let mut heights: BTreeMap<u32, HeightInfo> = BTreeMap::new();
+    // height -> largest filesize seen at that height (None when unknown).
+    let mut heights: BTreeMap<u32, Option<f64>> = BTreeMap::new();
 
     if let Some(formats) = json.get("formats").and_then(Value::as_array) {
         for format in formats {
@@ -154,60 +178,49 @@ fn derive_qualities(json: &Value) -> Vec<QualityOption> {
                 .get("filesize")
                 .and_then(Value::as_f64)
                 .or_else(|| format.get("filesize_approx").and_then(Value::as_f64));
-            let ext = format
-                .get("ext")
-                .and_then(Value::as_str)
-                .unwrap_or("mp4")
-                .to_string();
 
             heights
                 .entry(height)
                 .and_modify(|existing| {
                     // Keep the larger file size we've seen at this height.
-                    if filesize.unwrap_or(0.0) > existing.filesize.unwrap_or(0.0) {
-                        existing.filesize = filesize;
-                        existing.ext = ext.clone();
+                    if filesize.unwrap_or(0.0) > existing.unwrap_or(0.0) {
+                        *existing = filesize;
                     }
                 })
-                .or_insert(HeightInfo { filesize, ext });
+                .or_insert(filesize);
         }
     }
-
-    let mut options = vec![QualityOption {
-        id: "vbest".into(),
-        label: "Best available".into(),
-        height: u32::MAX,
-        note: String::new(),
-    }];
 
     if heights.is_empty() {
         // No per-height formats to work with — offer a standard ladder.
-        for height in [1080, 720, 480, 360] {
-            options.push(QualityOption {
+        return [1080, 720, 480, 360]
+            .into_iter()
+            .map(|height| QualityOption {
                 id: format!("v{height}"),
                 label: format!("{height}p"),
                 height,
-                note: String::new(),
-            });
-        }
-        return options;
+                note: "mp4".into(),
+            })
+            .collect();
     }
 
-    // Descending height, so the sharpest option sits nearest "Best available".
-    for (height, info) in heights.into_iter().rev() {
-        let note = match info.filesize {
-            Some(size) => format!("{} · ~{}", info.ext, human_size(size)),
-            None => info.ext,
-        };
-        options.push(QualityOption {
-            id: format!("v{height}"),
-            label: format!("{height}p"),
-            height,
-            note,
-        });
-    }
-
-    options
+    // Descending height: sharpest option first, lowest last.
+    heights
+        .into_iter()
+        .rev()
+        .map(|(height, filesize)| {
+            let note = match filesize {
+                Some(size) => format!("mp4 · ~{}", human_size(size)),
+                None => "mp4".into(),
+            };
+            QualityOption {
+                id: format!("v{height}"),
+                label: format!("{height}p"),
+                height,
+                note,
+            }
+        })
+        .collect()
 }
 
 /// Format a byte count as a compact, human-readable size ("124 MB").

@@ -36,6 +36,15 @@ struct Done {
     error: Option<String>,
 }
 
+/// Emitted the first time a job writes to a given path. The frontend persists
+/// these so an interrupted download's partial files can be cleaned up later, or
+/// simply resumed in place.
+#[derive(Serialize, Clone)]
+struct FileEvent {
+    id: String,
+    path: String,
+}
+
 /// Sentinel that marks a parseable progress line. The `download:` prefix in the
 /// template is consumed by yt-dlp as the event type; `@@P|` is ours.
 const PROGRESS_SENTINEL: &str = "@@P|";
@@ -175,6 +184,16 @@ pub fn resume_download(state: tauri::State<AppState>, id: String) -> Result<(), 
     Ok(())
 }
 
+/// Delete the partial files left by a job the user removes without finishing —
+/// e.g. an interrupted download that will never be resumed. Runs off the main
+/// thread because a fragmented job can leave hundreds of segment files behind.
+#[tauri::command]
+pub async fn discard_download(out_dir: String, outputs: Vec<String>) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || cleanup_partials(&out_dir, &outputs))
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// Tracks progress across a job's stages so the fill never jumps backwards when
 /// yt-dlp moves from the video stream to the audio stream.
 #[derive(Default)]
@@ -211,10 +230,15 @@ fn handle_stdout_line(
     final_path: &mut Option<String>,
     outputs: &mut Vec<String>,
 ) {
-    // Record a path as both the current final path and a cleanup candidate.
+    // Record a path as both the current final path and a cleanup candidate, and
+    // tell the frontend the first time we see it so it can be resumed or cleaned.
     let mut record = |path: String| {
         if !outputs.contains(&path) {
             outputs.push(path.clone());
+            let _ = app.emit(
+                "dl:file",
+                FileEvent { id: id.to_string(), path: path.clone() },
+            );
         }
         *final_path = Some(path);
     };
@@ -303,6 +327,10 @@ fn build_args(request: &DownloadRequest) -> Vec<String> {
         "--newline".into(),
         "--no-warnings".into(),
         "--ignore-config".into(),
+        // Resume a partially downloaded file instead of restarting it — this is
+        // what lets an interrupted job continue where it stopped. It is yt-dlp's
+        // default, but we set it explicitly so a resume is never a re-download.
+        "--continue".into(),
         "-N".into(),
         "4".into(),
         "--retries".into(),
@@ -507,18 +535,129 @@ fn cont_tree(pid: u32) {
     signal_tree(pid, libc::SIGCONT);
 }
 
-// On Windows, taskkill terminates the whole tree. Suspend/resume aren't wired up
-// there yet, so they're no-ops.
+// Windows has no signals. taskkill /T terminates the whole tree for cancel; for
+// pause/resume we suspend and resume every thread of every process in the tree.
+// yt-dlp.exe is likewise a PyInstaller one-file binary that launches a worker
+// child, so the tree — not just the process we spawned — must be reached.
 #[cfg(windows)]
 fn kill_tree(pid: u32) {
     let _ = std::process::Command::new("taskkill")
         .args(["/F", "/T", "/PID", &pid.to_string()])
         .output();
 }
+
 #[cfg(windows)]
-fn stop_tree(_pid: u32) {}
+fn stop_tree(pid: u32) {
+    // Two passes catch a thread or child that appears mid-suspend; resume drains
+    // the suspend count, so a thread suspended twice here still wakes fully.
+    for _ in 0..2 {
+        for_each_thread(&process_tree(pid), |tid| adjust_thread(tid, true));
+    }
+}
+
 #[cfg(windows)]
-fn cont_tree(_pid: u32) {}
+fn cont_tree(pid: u32) {
+    for_each_thread(&process_tree(pid), |tid| adjust_thread(tid, false));
+}
+
+/// `root` and all its descendants, read from one ToolHelp process snapshot.
+#[cfg(windows)]
+fn process_tree(root: u32) -> Vec<u32> {
+    use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, Process32First, Process32Next, PROCESSENTRY32, TH32CS_SNAPPROCESS,
+    };
+
+    let mut links: Vec<(u32, u32)> = Vec::new(); // (pid, parent pid)
+    unsafe {
+        let snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if snap == INVALID_HANDLE_VALUE {
+            return vec![root];
+        }
+        let mut entry: PROCESSENTRY32 = std::mem::zeroed();
+        entry.dwSize = std::mem::size_of::<PROCESSENTRY32>() as u32;
+        if Process32First(snap, &mut entry) != 0 {
+            loop {
+                links.push((entry.th32ProcessID, entry.th32ParentProcessID));
+                if Process32Next(snap, &mut entry) == 0 {
+                    break;
+                }
+            }
+        }
+        CloseHandle(snap);
+    }
+
+    let mut order = vec![root];
+    let mut i = 0;
+    while i < order.len() {
+        let parent = order[i];
+        for &(pid, ppid) in &links {
+            if ppid == parent && pid != parent && !order.contains(&pid) {
+                order.push(pid);
+            }
+        }
+        i += 1;
+    }
+    order
+}
+
+/// Call `f` with the thread id of every thread owned by one of `pids`.
+#[cfg(windows)]
+fn for_each_thread(pids: &[u32], mut f: impl FnMut(u32)) {
+    use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, Thread32First, Thread32Next, TH32CS_SNAPTHREAD, THREADENTRY32,
+    };
+
+    unsafe {
+        let snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+        if snap == INVALID_HANDLE_VALUE {
+            return;
+        }
+        let mut entry: THREADENTRY32 = std::mem::zeroed();
+        entry.dwSize = std::mem::size_of::<THREADENTRY32>() as u32;
+        if Thread32First(snap, &mut entry) != 0 {
+            loop {
+                if pids.contains(&entry.th32OwnerProcessID) {
+                    f(entry.th32ThreadID);
+                }
+                if Thread32Next(snap, &mut entry) == 0 {
+                    break;
+                }
+            }
+        }
+        CloseHandle(snap);
+    }
+}
+
+/// Suspend a thread once, or resume it fully (draining any repeated suspends).
+#[cfg(windows)]
+fn adjust_thread(tid: u32, suspend: bool) {
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::System::Threading::{
+        OpenThread, ResumeThread, SuspendThread, THREAD_SUSPEND_RESUME,
+    };
+
+    unsafe {
+        let handle = OpenThread(THREAD_SUSPEND_RESUME, 0, tid);
+        if handle.is_null() {
+            return;
+        }
+        if suspend {
+            SuspendThread(handle);
+        } else {
+            // ResumeThread returns the previous suspend count; keep going until
+            // the thread is actually running (count was 1 → now 0), or it fails.
+            loop {
+                let previous = ResumeThread(handle);
+                if previous == u32::MAX || previous <= 1 {
+                    break;
+                }
+            }
+        }
+        CloseHandle(handle);
+    }
+}
 
 /// Reduce accumulated stderr to a single readable failure line, with a hint
 /// toward the "Update engine" button when the cause looks like a stale extractor.
