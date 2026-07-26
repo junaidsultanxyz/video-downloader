@@ -10,6 +10,9 @@ line tools. [`yt-dlp`](https://github.com/yt-dlp/yt-dlp) does the fetching and
 [`ffmpeg`](https://ffmpeg.org) merges streams and pulls out audio. The whole app
 is one window.
 
+<img width="818" height="639" alt="image" src="https://github.com/user-attachments/assets/d8cd459b-269d-4d3c-8520-c958d0db6eca" />
+
+
 ## What it does
 
 - Paste a link, pick a quality, and save the file.
