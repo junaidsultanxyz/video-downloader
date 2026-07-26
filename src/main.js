@@ -1,5 +1,5 @@
-// Sluice frontend. No bundler, no framework — the Tauri API is reached through
-// the `window.__TAURI__` global (enabled by `withGlobalTauri` in the config).
+// Video Downloader frontend. No bundler, no framework. The Tauri API is reached
+// through the `window.__TAURI__` global (enabled by `withGlobalTauri` in config).
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
@@ -48,7 +48,7 @@ const el = {
 function loadSettings() {
   let stored = {};
   try {
-    stored = JSON.parse(localStorage.getItem("sluice.settings") || "{}");
+    stored = JSON.parse(localStorage.getItem("video-downloader.settings") || "{}");
   } catch {
     stored = {};
   }
@@ -62,7 +62,7 @@ function loadSettings() {
 }
 
 function saveSettings() {
-  localStorage.setItem("sluice.settings", JSON.stringify(settings));
+  localStorage.setItem("video-downloader.settings", JSON.stringify(settings));
 }
 
 // ---- Queue persistence ------------------------------------------------
@@ -93,7 +93,7 @@ function saveQueue() {
     outputs: i.outputs || [],
   }));
   try {
-    localStorage.setItem("sluice.queue", JSON.stringify(data));
+    localStorage.setItem("video-downloader.queue", JSON.stringify(data));
   } catch {
     /* storage full or unavailable — nothing we can do, just skip */
   }
@@ -108,7 +108,7 @@ function saveQueueThrottled() {
 function loadQueue() {
   let data = [];
   try {
-    data = JSON.parse(localStorage.getItem("sluice.queue") || "[]");
+    data = JSON.parse(localStorage.getItem("video-downloader.queue") || "[]");
   } catch {
     data = [];
   }

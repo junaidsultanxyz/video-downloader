@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Sluice",
-  "version": "0.1.0",
-  "identifier": "local.sluice.app",
+  "productName": "Video Downloader",
+  "version": "1.0.0",
+  "identifier": "com.junaidsultan.videodownloader",
   "build": {
     "frontendDist": "../src"
   },
@@ -10,7 +10,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "Sluice",
+        "title": "Video Downloader",
         "width": 860,
         "height": 720,
         "minWidth": 480,

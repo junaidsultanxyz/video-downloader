@@ -28,5 +28,5 @@ pub fn run() {
             paths::pick_folder,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running Sluice");
+        .expect("error while running Video Downloader");
 }

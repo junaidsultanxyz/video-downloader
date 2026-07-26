@@ -1,8 +1,8 @@
 [Desktop Entry]
 Type=Application
-Name=Sluice
+Name=Video Downloader
 Comment=Download public videos from YouTube, Instagram, Facebook and TikTok
-Exec=sluice
-Icon=sluice
+Exec=video-downloader
+Icon=video-downloader
 Terminal=false
 Categories=AudioVideo;Utility;Network;

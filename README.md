@@ -1,11 +1,11 @@
-# Sluice
+# Video Downloader
 
 A small desktop downloader. Paste a public link from YouTube, Instagram,
-Facebook or TikTok and Sluice saves the video to disk at a quality you choose,
+Facebook or TikTok and Video Downloader saves the video to disk at a quality you choose,
 or as audio only. It is a single user personal tool for public content. There
 is no login, no cookie import, and no private or paywalled media.
 
-Sluice is a thin [Tauri](https://tauri.app) shell around two bundled command
+Video Downloader is a thin [Tauri](https://tauri.app) shell around two bundled command
 line tools. [`yt-dlp`](https://github.com/yt-dlp/yt-dlp) does the fetching and
 [`ffmpeg`](https://ffmpeg.org) merges streams and pulls out audio. The whole app
 is one window.
@@ -18,7 +18,7 @@ is one window.
 - A queue where each item has pause, resume, and cancel. Cancel stops the
   download at once and removes the partial files it left behind.
 - If you close the app while a download is running, the job comes back the next
-  time you open Sluice. It shows as interrupted, and Resume continues it from
+  time you open Video Downloader. It shows as interrupted, and Resume continues it from
   where it stopped instead of starting over.
 - Light and dark themes, with a toggle in the header. Your choice is saved, and
   the first run follows your system setting.
@@ -96,7 +96,7 @@ A build only produces artifacts for the OS it runs on. What each platform gets:
 
 Notes:
 
-- **Fedora** gets a native `.rpm`. Install it with `sudo dnf install ./Sluice-*.rpm`.
+- **Fedora** gets a native `.rpm`. Install it with `sudo dnf install ./*.rpm` from the bundle folder.
 - **Arch** has no native Tauri bundler, so the AppImage is the portable choice.
   `chmod +x` it and run. For a real pacman package, use `packaging/arch/PKGBUILD`
   with `cd packaging/arch && makepkg -si`. It links Arch's own `yt-dlp` and
@@ -112,7 +112,7 @@ Notes:
 GitHub release. Push a version tag:
 
 ```bash
-git tag v0.1.0 && git push origin v0.1.0
+git tag v1.0.0 && git push origin v1.0.0
 ```
 
 An Ubuntu runner produces the `.rpm` and the `.AppImage`. A Windows runner
@@ -128,12 +128,12 @@ Target sites change how they work often, and extractors break when they do, so
 updates the bundled `yt-dlp` in place (`yt-dlp -U`).
 
 On Linux a package managed `yt-dlp` cannot update itself, but the bundled
-sidecar Sluice uses can. If a download fails with an unsupported URL or an
+sidecar Video Downloader uses can. If a download fails with an unsupported URL or an
 extraction error, update the engine and try again.
 
 ## A note on rights
 
-Sluice is meant only for content you have the right to save. Most of these
+Video Downloader is meant only for content you have the right to save. Most of these
 platforms restrict downloading in their terms of service. Please respect them,
 and the rights of the people who made what you are saving.
 
@@ -142,3 +142,7 @@ and the rights of the people who made what you are saving.
 Deliberately small. No cookie import or login, no playlist or channel bulk
 downloads, no subtitles, no scheduling, and no auto update for the app itself
 (only for the engine). One window, public content, done.
+
+## License
+
+Released under the MIT License. See [LICENSE](LICENSE) for the full text.

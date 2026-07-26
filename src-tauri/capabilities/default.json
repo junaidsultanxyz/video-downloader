@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Permissions granted to the Sluice main window.",
+  "description": "Permissions granted to the Video Downloader main window.",
   "windows": ["main"],
   "permissions": [
     "core:default",

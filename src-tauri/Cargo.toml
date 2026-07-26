@@ -1,15 +1,20 @@
 [package]
-name = "sluice"
-version = "0.1.0"
+name = "video-downloader"
+version = "1.0.0"
 description = "A minimal desktop downloader for public videos"
-authors = ["Sluice"]
+authors = ["junaidsultanxyz <contact@junaidsultan.com>"]
 edition = "2021"
 rust-version = "1.77"
+license = "MIT"
+repository = "https://github.com/junaidsultanxyz/video-downloader"
+homepage = "https://github.com/junaidsultanxyz/video-downloader"
+keywords = ["video", "downloader", "yt-dlp", "ffmpeg", "tauri"]
+categories = ["multimedia::video"]
 
 # The library is what Tauri actually runs; main.rs is a thin launcher that
 # calls into it. This split is what lets the same code target mobile later.
 [lib]
-name = "sluice_lib"
+name = "video_downloader_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

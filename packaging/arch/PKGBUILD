@@ -1,23 +1,23 @@
-# Maintainer: Sluice
+# Maintainer: junaidsultanxyz <contact@junaidsultan.com>
 #
 # Native Arch package. Unlike the bundled AppImage/rpm, this links Arch's own
 # yt-dlp and ffmpeg packages instead of shipping copies, so the engine updates
 # through pacman (the in-app "Update engine" button won't work against a
-# read-only system yt-dlp — that's expected here).
+# read-only system yt-dlp, which is expected here).
 #
 # Build from this directory: `makepkg -si`
-pkgname=sluice
-pkgver=0.1.0
+pkgname=video-downloader
+pkgver=1.0.0
 pkgrel=1
 pkgdesc="A minimal desktop downloader for public videos"
 arch=('x86_64')
-url="https://github.com/junaidsultanxyz/sluice"
-license=('custom')
+url="https://github.com/junaidsultanxyz/video-downloader"
+license=('MIT')
 depends=('webkit2gtk-4.1' 'gtk3' 'librsvg' 'yt-dlp' 'ffmpeg' 'hicolor-icon-theme')
 makedepends=('rust' 'cargo')
 # The release profile already applies its own LTO; don't let makepkg inject C LTO.
 options=('!lto')
-source=('sluice.desktop')
+source=('video-downloader.desktop')
 sha256sums=('SKIP')
 
 # Path to the repository root, two levels up from packaging/arch/.
@@ -28,7 +28,7 @@ build() {
   cd "$_repo_root/src-tauri"
 
   # The frontend is embedded at compile time (frontendDist points at ../src),
-  # so a plain cargo build produces a self-contained binary — no JS build step.
+  # so a plain cargo build produces a self-contained binary. No JS build step.
   # Tauri still expects the externalBin sidecars to exist while compiling, so
   # provide them by linking the system tools under the triple-suffixed names.
   mkdir -p binaries
@@ -41,18 +41,22 @@ build() {
 package() {
   # The real binary and the sidecar links share a directory so that, at
   # runtime, current_exe() resolves here and sidecar("yt-dlp") finds the link.
-  install -Dm755 "$_repo_root/src-tauri/target/release/sluice" \
-    "$pkgdir/usr/lib/sluice/sluice"
-  ln -s /usr/bin/yt-dlp "$pkgdir/usr/lib/sluice/yt-dlp-${_triple}"
-  ln -s /usr/bin/ffmpeg "$pkgdir/usr/lib/sluice/ffmpeg-${_triple}"
+  install -Dm755 "$_repo_root/src-tauri/target/release/video-downloader" \
+    "$pkgdir/usr/lib/video-downloader/video-downloader"
+  ln -s /usr/bin/yt-dlp "$pkgdir/usr/lib/video-downloader/yt-dlp-${_triple}"
+  ln -s /usr/bin/ffmpeg "$pkgdir/usr/lib/video-downloader/ffmpeg-${_triple}"
 
   # Launcher on PATH.
   install -d "$pkgdir/usr/bin"
-  ln -s /usr/lib/sluice/sluice "$pkgdir/usr/bin/sluice"
+  ln -s /usr/lib/video-downloader/video-downloader "$pkgdir/usr/bin/video-downloader"
 
   # Desktop entry and icon.
-  install -Dm644 "$srcdir/sluice.desktop" \
-    "$pkgdir/usr/share/applications/sluice.desktop"
+  install -Dm644 "$srcdir/video-downloader.desktop" \
+    "$pkgdir/usr/share/applications/video-downloader.desktop"
   install -Dm644 "$_repo_root/src-tauri/icons/128x128.png" \
-    "$pkgdir/usr/share/icons/hicolor/128x128/apps/sluice.png"
+    "$pkgdir/usr/share/icons/hicolor/128x128/apps/video-downloader.png"
+
+  # MIT license text.
+  install -Dm644 "$_repo_root/LICENSE" \
+    "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }

@@ -24,7 +24,7 @@ jobs:
       fail-fast: false
       matrix:
         # Linux builds the rpm (Fedora) and AppImage (Arch / any glibc distro);
-        # Windows builds the NSIS installer. macOS is out of scope for Sluice.
+        # Windows builds the NSIS installer. macOS is out of scope here.
         # ubuntu-22.04 keeps the AppImage's glibc requirement low. Each runner is
         # told exactly which bundles to make so it never tries one that does not
         # belong to its OS (the config lists all three for local builds).
@@ -83,7 +83,7 @@ jobs:
           # Build only the bundles that belong to this runner's OS.
           args: --bundles ${{ matrix.bundles }}
           tagName: ${{ github.event.inputs.tag || github.ref_name }}
-          releaseName: Sluice ${{ github.event.inputs.tag || github.ref_name }}
+          releaseName: Video Downloader ${{ github.event.inputs.tag || github.ref_name }}
           releaseBody: |
             Download the installer for your platform:
 
