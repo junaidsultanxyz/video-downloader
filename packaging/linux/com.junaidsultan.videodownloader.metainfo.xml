@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.junaidsultan.videodownloader</id>
+  <name>Video Downloader</name>
+  <summary>Download public videos in the quality you choose</summary>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+  <developer id="com.junaidsultan">
+    <name>junaidsultanxyz</name>
+  </developer>
+  <description>
+    <p>
+      A small desktop app to download public videos from YouTube, Instagram,
+      Facebook and TikTok. Pick any resolution with its exact file size, from
+      the highest available down to the lowest, or save audio only.
+    </p>
+    <p>
+      There is no login, no cookie import, and no tracking. It is a personal
+      tool for public content only.
+    </p>
+  </description>
+  <launchable type="desktop-id">Video Downloader.desktop</launchable>
+  <url type="homepage">https://github.com/junaidsultanxyz/video-downloader</url>
+  <url type="bugtracker">https://github.com/junaidsultanxyz/video-downloader/issues</url>
+  <provides>
+    <binary>video-downloader</binary>
+  </provides>
+  <content_rating type="oars-1.1" />
+  <releases>
+    <release version="1.0.2" date="2026-07-27" />
+  </releases>
+</component>

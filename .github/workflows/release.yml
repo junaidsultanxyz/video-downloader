@@ -70,24 +70,87 @@ jobs:
         if: runner.os == 'Windows'
         run: pwsh -ExecutionPolicy Bypass -File scripts/fetch-binaries.ps1
 
-      - name: Build and publish release
-        uses: tauri-apps/tauri-action@v0
+      # Linux builds the rpm and AppImage as two separate invocations, not the
+      # combined `--bundles rpm,appimage` tauri-action normally does in one
+      # shot, because the two need different bundle.externalBin: the rpm must
+      # NOT bundle ffmpeg (it ships /usr/bin/ffmpeg, which file-conflicts with
+      # Fedora's own ffmpeg-free package and makes the rpm uninstallable), while
+      # the AppImage must stay fully self-contained. The rpm.conf.json override
+      # drops ffmpeg from externalBin, adds a `(ffmpeg-free or ffmpeg)` runtime
+      # dependency instead, ships a proper AppStream metainfo file (without one,
+      # GNOME Software cannot tell this package apart from an unrelated Flathub
+      # app that happens to share the generic name "Video Downloader", and
+      # shows that app's listing instead), and fills in the desktop file's
+      # Categories, which Tauri's default template leaves empty.
+      - name: Build rpm (Linux)
+        if: runner.os == 'Linux'
+        run: npx --yes @tauri-apps/cli@^2 build --bundles rpm --config packaging/linux/rpm.conf.json
+
+      - name: Build AppImage (Linux)
+        if: runner.os == 'Linux'
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # GitHub runners lack FUSE 2, which the AppImage tooling needs; this
           # makes those tools extract-and-run instead of mounting.
           APPIMAGE_EXTRACT_AND_RUN: "1"
+        run: npx --yes @tauri-apps/cli@^2 build --bundles appimage
+
+      # linuxdeploy bundles this runner's own libwayland-client/-server/-cursor/
+      # -egl into the AppImage. Those are hardware/compositor-tied libraries
+      # that must match the machine the app actually runs on; a stale bundled
+      # copy shadows the host's newer one and breaks EGL, which is what caused
+      # the AppImage to open to a blank white window on a newer distro (Fedora)
+      # than the one that built it (see scripts/fix-appimage-wayland-libs.sh
+      # and tauri-apps/tauri#11988 for the same failure elsewhere).
+      - name: Fix AppImage bundled Wayland libraries (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          curl -sSL --max-time 120 -o /tmp/appimagetool \
+            "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage"
+          chmod +x /tmp/appimagetool
+          APPIMAGETOOL=/tmp/appimagetool bash scripts/fix-appimage-wayland-libs.sh \
+            src-tauri/target/release/bundle/appimage/*.AppImage
+
+      - name: Publish Linux release assets
+        if: runner.os == 'Linux'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_NOTES: |
+            Download the installer for your platform:
+
+            - Fedora: `.rpm`
+            - Arch or other Linux: `.AppImage` (`chmod +x`, then run)
+            - Windows: `-setup.exe`
+        run: |
+          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          # The Windows job (still on tauri-action) may create this same release
+          # in parallel; `create` failing because it already exists is fine,
+          # upload only needs the release to exist by the time it runs.
+          gh release create "$tag" \
+            --repo "${{ github.repository }}" \
+            --title "Video Downloader $tag" \
+            --notes "$RELEASE_NOTES" \
+            --draft || true
+          gh release upload "$tag" \
+            src-tauri/target/release/bundle/rpm/*.rpm \
+            src-tauri/target/release/bundle/appimage/*.AppImage \
+            --repo "${{ github.repository }}" \
+            --clobber
+
+      - name: Build and publish release (Windows)
+        if: runner.os == 'Windows'
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           # No package.json in this project, so point the action at the CLI.
           tauriScript: npx --yes @tauri-apps/cli@^2
-          # Build only the bundles that belong to this runner's OS.
           args: --bundles ${{ matrix.bundles }}
           tagName: ${{ github.event.inputs.tag || github.ref_name }}
           releaseName: Video Downloader ${{ github.event.inputs.tag || github.ref_name }}
           releaseBody: |
             Download the installer for your platform:
 
-            - Fedora: `.rpm` (or use the AppImage if it conflicts with a system ffmpeg)
+            - Fedora: `.rpm`
             - Arch or other Linux: `.AppImage` (`chmod +x`, then run)
             - Windows: `-setup.exe`
           releaseDraft: true

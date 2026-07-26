@@ -1,0 +1,14 @@
+{
+  "bundle": {
+    "externalBin": ["binaries/yt-dlp"],
+    "linux": {
+      "rpm": {
+        "depends": ["(ffmpeg-free or ffmpeg)"],
+        "desktopTemplate": "../packaging/linux/video-downloader.desktop.hbs",
+        "files": {
+          "/usr/share/metainfo/com.junaidsultan.videodownloader.metainfo.xml": "../packaging/linux/com.junaidsultan.videodownloader.metainfo.xml"
+        }
+      }
+    }
+  }
+}
