@@ -38,10 +38,14 @@ is one window.
 - **Sidecars (`src-tauri/binaries/`)** are the `yt-dlp` and `ffmpeg` binaries.
   They are fetched per machine and never committed.
 
+## Download Pre-built Binary
+See all the new released for specific platforms in [Release Page](https://github.com/junaidsultanxyz/video-downloader/releases)
+
+
 ## Setup
+If you want to build it yourself, here is how to do so.
 
 ### 1. Prerequisites
-
 Every platform needs a [Rust toolchain](https://rustup.rs). The build
 dependencies then differ by OS.
 
