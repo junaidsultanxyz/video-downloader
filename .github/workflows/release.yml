@@ -25,8 +25,14 @@ jobs:
       matrix:
         # Linux builds the rpm (Fedora) and AppImage (Arch / any glibc distro);
         # Windows builds the NSIS installer. macOS is out of scope for Sluice.
-        # ubuntu-22.04 keeps the AppImage's glibc requirement low.
-        os: [ubuntu-22.04, windows-latest]
+        # ubuntu-22.04 keeps the AppImage's glibc requirement low. Each runner is
+        # told exactly which bundles to make so it never tries one that does not
+        # belong to its OS (the config lists all three for local builds).
+        include:
+          - os: ubuntu-22.04
+            bundles: rpm,appimage
+          - os: windows-latest
+            bundles: nsis
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -74,13 +80,15 @@ jobs:
         with:
           # No package.json in this project, so point the action at the CLI.
           tauriScript: npx --yes @tauri-apps/cli@^2
+          # Build only the bundles that belong to this runner's OS.
+          args: --bundles ${{ matrix.bundles }}
           tagName: ${{ github.event.inputs.tag || github.ref_name }}
           releaseName: Sluice ${{ github.event.inputs.tag || github.ref_name }}
           releaseBody: |
             Download the installer for your platform:
 
-            - **Fedora** — `.rpm` (or use the AppImage if it conflicts with a system ffmpeg)
-            - **Arch / other Linux** — `.AppImage` (`chmod +x`, then run)
-            - **Windows** — `-setup.exe`
+            - Fedora: `.rpm` (or use the AppImage if it conflicts with a system ffmpeg)
+            - Arch or other Linux: `.AppImage` (`chmod +x`, then run)
+            - Windows: `-setup.exe`
           releaseDraft: true
           prerelease: false
