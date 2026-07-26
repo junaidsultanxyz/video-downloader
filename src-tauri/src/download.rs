@@ -67,6 +67,14 @@ pub async fn start_download(
         .sidecar("yt-dlp")
         .map_err(|e| format!("Couldn't start the download engine: {e}"))?
         .args(args)
+        // Force yt-dlp's Python runtime to write stdout as UTF-8. On Windows a
+        // piped process defaults to the ANSI code page, so a non-ASCII character
+        // in the title (e.g. an en dash) arrives mangled by our lossy UTF-8
+        // decode. The output path we record for cleanup would then no longer
+        // match the real file on disk, and cancel could not delete the partial.
+        // Linux already emits UTF-8, so this just makes every platform agree.
+        .env("PYTHONUTF8", "1")
+        .env("PYTHONIOENCODING", "utf-8")
         .spawn()
         .map_err(|e| format!("The download engine didn't start: {e}"))?;
 
@@ -493,11 +501,20 @@ fn cleanup_partials(out_dir: &str, outputs: &[String]) {
             continue;
         };
         let name = name.to_string_lossy();
+        // The `[id].fNNN.ext` tail of the name is pure ASCII, so it survives even
+        // if the title portion was ever garbled by a stdout encoding mismatch.
+        // Matching on this tail as well as the full name makes cleanup robust to
+        // such a mismatch, and it stays specific to this download because the
+        // video id is unique.
+        let tail = name.rfind('[').map(|i| &name[i..]);
         let Ok(entries) = std::fs::read_dir(dir) else {
             continue;
         };
         for entry in entries.filter_map(Result::ok) {
-            if entry.file_name().to_string_lossy().starts_with(name.as_ref()) {
+            let entry_name = entry.file_name().to_string_lossy().into_owned();
+            let matches = entry_name.starts_with(name.as_ref())
+                || tail.map_or(false, |t| t.len() > 2 && entry_name.contains(t));
+            if matches {
                 remove_file_retrying(&entry.path());
             }
         }
