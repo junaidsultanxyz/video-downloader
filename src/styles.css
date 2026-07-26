@@ -1,23 +1,42 @@
-/* Video Downloader: a precision instrument panel.
-   Pale anodised housing, ink lettering, one cobalt accent for things in motion.
-   Tokens live on :root; the dark set is swapped in under prefers-color-scheme. */
+/* Video Downloader: a calm, precise control surface.
+   White cards on a soft neutral field, ink lettering, one cobalt accent for
+   things in motion. Tokens live on :root; the dark set is swapped in under
+   prefers-color-scheme, or forced by the header toggle via [data-theme]. */
+
+/* Inter, self-hosted so the product looks identical on every machine instead of
+   falling back to whatever the OS ships. One variable file carries every weight
+   we use (400-600), including the in-between 550. */
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("fonts/inter-variable.woff2") format("woff2");
+}
 
 :root {
-  --field: #e8eae6; /* app background */
-  --panel: #f7f8f6; /* cards, input wells */
-  --ink: #1b2430; /* primary text */
-  --ink-soft: #6b7684; /* labels, metadata */
-  --rule: #cdd2cc; /* hairlines */
-  --flow: #2b5fd9; /* accent: active, progress, primary button */
-  --settled: #2f7a54; /* completed only */
-  --fault: #b4432e; /* errors only */
+  --field: #eceef1; /* app background */
+  --panel: #ffffff; /* cards, input wells */
+  --sunk: #f2f4f6; /* recessed fills inside a panel (chips, thumbs) */
+  --ink: #17202c; /* primary text */
+  --ink-soft: #626c7a; /* labels, metadata */
+  --ink-faint: #99a1ac; /* placeholders, disabled */
+  --rule: #e4e7ec; /* hairlines */
+  --rule-strong: #d3d8df; /* hairlines that need to read on white */
+  --flow: #2f5fe0; /* accent: active, progress, primary button */
+  --flow-weak: #eaf0fe; /* accent tint: selected chips, primary hover */
+  --settled: #1f7a4d; /* completed only */
+  --fault: #c23a26; /* errors only */
 
-  --font-ui: system-ui, -apple-system, "Segoe UI", Inter, sans-serif;
-  --font-data: ui-monospace, "Cascadia Mono", "JetBrains Mono", Consolas,
-    monospace;
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.04);
+  --shadow-md: 0 1px 3px rgba(16, 24, 40, 0.06), 0 1px 2px rgba(16, 24, 40, 0.04);
 
-  --radius: 8px;
-  --max-width: 780px;
+  --font-ui: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    Roboto, "Helvetica Neue", Arial, sans-serif;
+
+  --radius: 10px;
+  --radius-sm: 7px;
+  --max-width: 760px;
 }
 
 /* Dark palette. Applied when the OS prefers dark and the user has not forced
@@ -26,26 +45,40 @@
    query, so an explicit choice always wins over the system preference. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --field: #14181d;
-    --panel: #1b2027;
-    --ink: #e4e8ec;
-    --ink-soft: #8a94a2;
-    --rule: #2a313a;
+    --field: #0f1216;
+    --panel: #171b21;
+    --sunk: #1f242c;
+    --ink: #e7eaef;
+    --ink-soft: #8b95a3;
+    --ink-faint: #5c6570;
+    --rule: #262c34;
+    --rule-strong: #333a44;
     --flow: #5b8def;
-    --settled: #4fa97b;
-    --fault: #d9704f;
+    --flow-weak: #1a2740;
+    --settled: #4fae7e;
+    --fault: #e0765a;
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 1px 3px rgba(0, 0, 0, 0.35), 0 1px 2px rgba(0, 0, 0, 0.25);
   }
 }
 
 :root[data-theme="dark"] {
-  --field: #14181d;
-  --panel: #1b2027;
-  --ink: #e4e8ec;
-  --ink-soft: #8a94a2;
-  --rule: #2a313a;
+  --field: #0f1216;
+  --panel: #171b21;
+  --sunk: #1f242c;
+  --ink: #e7eaef;
+  --ink-soft: #8b95a3;
+  --ink-faint: #5c6570;
+  --rule: #262c34;
+  --rule-strong: #333a44;
   --flow: #5b8def;
-  --settled: #4fa97b;
-  --fault: #d9704f;
+  --flow-weak: #1a2740;
+  --settled: #4fae7e;
+  --fault: #e0765a;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 1px 3px rgba(0, 0, 0, 0.35), 0 1px 2px rgba(0, 0, 0, 0.25);
 }
 
 * {
@@ -70,27 +103,30 @@ body {
   color: var(--ink);
   font-family: var(--font-ui);
   font-size: 14px;
-  line-height: 1.4;
+  line-height: 1.45;
+  letter-spacing: -0.006em;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
-/* Tabular numerals everywhere data is shown — without this the readouts jitter
-   horizontally on every update. */
+/* One typeface throughout. Live-updating readouts (speed, ETA, size, duration,
+   percentages) get tabular figures so columns of digits stay aligned as they
+   change — the alignment a monospace font gave, without its spaced-out look. */
 .data,
-.url,
-.note,
 .q-note,
-.duration {
-  font-family: var(--font-data);
+.duration,
+.row-quality {
   font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
 }
 
-/* Section labels: the wide tracking is what sells the instrument feel. */
+/* Section labels: quiet, uppercase, restrained tracking. */
 .eyebrow {
   font-family: var(--font-ui);
   font-size: 11px;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.07em;
   color: var(--ink-soft);
 }
 
@@ -102,51 +138,77 @@ body {
   min-height: 100%;
   display: flex;
   flex-direction: column;
-  padding: 0 20px;
+  padding: 0 24px;
 }
 
 .header {
-  height: 40px;
+  height: 60px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   border-bottom: 1px solid var(--rule);
 }
 
+/* Left cluster: accent mark + wordmark. */
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.brand-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  background: var(--flow);
+  color: #fff;
+  box-shadow: var(--shadow-sm);
+}
+
+.brand-mark svg {
+  width: 16px;
+  height: 16px;
+}
+
 .wordmark {
   font-weight: 600;
-  letter-spacing: 0.16em;
-  font-size: 13px;
+  font-size: 15px;
+  letter-spacing: -0.01em;
+  color: var(--ink);
 }
 
 /* Right-hand header cluster: theme toggle + engine status. */
 .header-controls {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
 }
 
 .theme-toggle {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   padding: 0;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: none;
   color: var(--ink-soft);
   cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
 }
 
 .theme-toggle:hover {
   color: var(--ink);
+  background: var(--sunk);
 }
 
 .theme-toggle svg {
-  width: 16px;
-  height: 16px;
+  width: 17px;
+  height: 17px;
 }
 
 /* Show the icon for the action available: a moon in light mode (tap to go
@@ -168,40 +230,54 @@ body {
   align-items: center;
   gap: 7px;
   background: none;
-  border: none;
+  border: 1px solid transparent;
   cursor: pointer;
   color: var(--ink-soft);
   font: inherit;
   font-size: 12px;
-  padding: 4px 6px;
-  border-radius: 6px;
+  font-weight: 500;
+  padding: 5px 9px;
+  border-radius: var(--radius-sm);
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
 }
 
 .engine:hover {
   color: var(--ink);
+  background: var(--sunk);
 }
 
-.engine-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--ink-soft);
+.engine-icon {
+  width: 13px;
+  height: 13px;
+  flex: none;
+  opacity: 0.8;
 }
 
-.engine.ok .engine-dot {
-  background: var(--settled);
+.engine.ok {
+  color: var(--ink);
 }
 
-.engine.busy .engine-dot {
-  background: var(--flow);
+/* While updating, the engine is working — spin the refresh glyph. No dots. */
+.engine.busy {
+  color: var(--flow);
+}
+
+.engine.busy .engine-icon {
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .main {
   flex: 1;
-  padding: 20px 0;
+  padding: 28px 0 40px;
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: 32px;
 }
 
 /* ---- Source ---------------------------------------------------------- */
@@ -209,12 +285,20 @@ body {
 .well {
   display: flex;
   gap: 8px;
-  height: 56px;
+  height: 58px;
   background: var(--panel);
-  border: 1px solid var(--rule);
+  border: 1px solid var(--rule-strong);
   border-radius: var(--radius);
   padding: 8px;
   align-items: center;
+  box-shadow: var(--shadow-sm);
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+/* Lift the whole well when the input is focused — cleaner than a bare outline. */
+.well:focus-within {
+  border-color: var(--flow);
+  box-shadow: 0 0 0 3px var(--flow-weak);
 }
 
 .url {
@@ -223,17 +307,19 @@ body {
   border: none;
   background: none;
   color: var(--ink);
+  font-family: var(--font-ui);
   font-size: 15px;
-  padding: 0 8px;
+  letter-spacing: -0.006em;
+  padding: 0 10px;
   outline: none;
 }
 
 .url::placeholder {
-  color: var(--ink-soft);
+  color: var(--ink-faint);
 }
 
 .supported {
-  margin: 10px 2px 0;
+  margin: 11px 4px 0;
   font-size: 12px;
   color: var(--ink-soft);
 }
@@ -242,51 +328,59 @@ body {
 
 .btn {
   font: inherit;
-  font-weight: 500;
-  border-radius: 6px;
-  border: 1px solid var(--rule);
+  font-weight: 550;
+  font-size: 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--rule-strong);
   background: var(--panel);
   color: var(--ink);
-  padding: 0 16px;
-  height: 40px;
+  padding: 0 18px;
+  height: 42px;
   cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease,
+    filter 120ms ease;
 }
 
 .btn:hover {
   border-color: var(--ink-soft);
+  background: var(--sunk);
 }
 
 .btn-primary {
   background: var(--flow);
   border-color: var(--flow);
   color: #fff;
+  box-shadow: var(--shadow-sm);
 }
 
 .btn-primary:hover {
+  background: var(--flow);
   border-color: var(--flow);
-  filter: brightness(1.05);
+  filter: brightness(1.06);
 }
 
 .btn:disabled {
   opacity: 0.5;
   cursor: default;
+  filter: none;
 }
 
 /* ---- Preview card ---------------------------------------------------- */
 
 .preview {
   display: flex;
-  gap: 16px;
-  margin-top: 16px;
-  padding: 16px;
+  gap: 18px;
+  margin-top: 18px;
+  padding: 18px;
   background: var(--panel);
   border: 1px solid var(--rule);
   border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
 }
 
 /* Rise + fade the card in. Disabled under reduced-motion below. */
 .preview:not(.skeleton):not([hidden]) {
-  animation: rise 120ms ease-out;
+  animation: rise 140ms ease-out;
 }
 
 @keyframes rise {
@@ -301,12 +395,12 @@ body {
 }
 
 .thumb {
-  width: 160px;
-  height: 90px;
+  width: 168px;
+  height: 94px;
   flex: none;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   object-fit: cover;
-  background: var(--field);
+  background: var(--sunk);
   border: 1px solid var(--rule);
 }
 
@@ -315,12 +409,15 @@ body {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 7px;
 }
 
 .title {
   font-weight: 600;
-  font-size: 15px;
+  font-size: 15.5px;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
   overflow: hidden;
   text-overflow: ellipsis;
   display: -webkit-box;
@@ -337,32 +434,35 @@ body {
 .platform-badge {
   display: inline-block;
   align-self: flex-start;
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 600;
-  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
   padding: 2px 8px;
   border-radius: 999px;
   color: var(--flow);
-  background: transparent;
-  border: 1px solid var(--flow);
+  background: var(--flow-weak);
+  border: 1px solid transparent;
 }
 
 .chip-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 6px;
+  gap: 7px;
+  margin-top: 8px;
 }
 
 .chip {
   font: inherit;
   font-size: 12px;
-  padding: 5px 10px;
-  border-radius: 6px;
-  border: 1px solid var(--rule);
-  background: var(--field);
+  font-weight: 500;
+  padding: 6px 11px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--rule-strong);
+  background: var(--panel);
   color: var(--ink);
   cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease;
 }
 
 .chip .q-note {
@@ -373,19 +473,21 @@ body {
 
 .chip:hover {
   border-color: var(--ink-soft);
+  background: var(--sunk);
 }
 
 .chip[aria-pressed="true"] {
   border-color: var(--flow);
-  box-shadow: inset 0 0 0 1px var(--flow);
+  background: var(--flow-weak);
+  color: var(--flow);
 }
 
 .chip[aria-pressed="true"] .q-note {
-  color: var(--ink);
+  color: var(--flow);
 }
 
 .preview-actions {
-  margin-top: 10px;
+  margin-top: 12px;
   display: flex;
   justify-content: flex-end;
 }
@@ -394,6 +496,7 @@ body {
 
 .skeleton {
   animation: none;
+  box-shadow: var(--shadow-sm);
 }
 
 .skel-thumb,
@@ -401,18 +504,18 @@ body {
 .skel-chip {
   background: linear-gradient(
     90deg,
-    var(--rule) 25%,
-    var(--field) 50%,
-    var(--rule) 75%
+    var(--sunk) 25%,
+    var(--rule) 50%,
+    var(--sunk) 75%
   );
   background-size: 200% 100%;
   animation: shimmer 1.2s infinite;
-  border-radius: 4px;
+  border-radius: 5px;
 }
 
 .skel-thumb {
-  width: 160px;
-  height: 90px;
+  width: 168px;
+  height: 94px;
   flex: none;
 }
 
@@ -433,13 +536,13 @@ body {
 
 .skel-chips {
   display: flex;
-  gap: 6px;
+  gap: 7px;
   margin-top: 6px;
 }
 
 .skel-chip {
-  width: 56px;
-  height: 26px;
+  width: 58px;
+  height: 28px;
 }
 
 @keyframes shimmer {
@@ -449,7 +552,7 @@ body {
 }
 
 .probe-error {
-  margin-top: 16px;
+  margin-top: 18px;
   padding: 14px 16px;
   border: 1px solid var(--fault);
   border-radius: var(--radius);
@@ -466,14 +569,14 @@ body {
   align-items: center;
   justify-content: space-between;
   border-bottom: 1px solid var(--rule);
-  padding-bottom: 8px;
-  margin-bottom: 4px;
+  padding-bottom: 10px;
+  margin-bottom: 2px;
 }
 
 .empty {
   color: var(--ink-soft);
   font-size: 13px;
-  padding: 24px 0;
+  padding: 28px 2px;
 }
 
 .queue-list {
@@ -484,19 +587,25 @@ body {
 
 .row {
   position: relative;
-  padding: 12px 12px 14px 20px;
+  padding: 14px 4px 16px 20px;
   border-bottom: 1px solid var(--rule);
 }
 
-/* The gate: a 3px full-height bar on the left edge — the only status marker. */
+.row:last-child {
+  border-bottom: none;
+}
+
+/* The gate: a rounded full-height bar on the left edge — the only status
+   marker, so no dots are needed anywhere. */
 .row::before {
   content: "";
   position: absolute;
   left: 0;
-  top: 0;
-  bottom: 0;
+  top: 12px;
+  bottom: 12px;
   width: 3px;
-  background: var(--rule);
+  border-radius: 999px;
+  background: var(--rule-strong);
 }
 
 .row.running::before {
@@ -512,22 +621,22 @@ body {
 }
 
 .row.cancelled::before {
-  background: var(--ink-soft);
+  background: var(--ink-faint);
 }
 
 .row.paused::before {
   background: var(--ink-soft);
 }
 
-/* Interrupted (app was closed mid-download): amber-ish accent, resumable. */
+/* Interrupted (app was closed mid-download): dimmed accent, resumable. */
 .row.interrupted::before {
   background: var(--flow);
-  opacity: 0.55;
+  opacity: 0.5;
 }
 
 /* Livestream/segmented caption under the title. */
 .row-frag {
-  margin-top: 4px;
+  margin-top: 5px;
   font-size: 11px;
   color: var(--ink-soft);
 }
@@ -540,23 +649,23 @@ body {
 .row-top {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 11px;
 }
 
 .row-thumb {
-  width: 44px;
-  height: 44px;
+  width: 46px;
+  height: 46px;
   flex: none;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   object-fit: cover;
-  background: var(--field);
+  background: var(--sunk);
   border: 1px solid var(--rule);
 }
 
 .row-title {
   flex: 1;
   min-width: 0;
-  font-weight: 500;
+  font-weight: 550;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -571,18 +680,21 @@ body {
 .row-action {
   flex: none;
   background: none;
-  border: 1px solid var(--rule);
-  border-radius: 5px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 6px;
   color: var(--ink-soft);
   cursor: pointer;
   font: inherit;
   font-size: 12px;
-  padding: 3px 9px;
+  font-weight: 500;
+  padding: 4px 10px;
+  transition: border-color 120ms ease, color 120ms ease, background 120ms ease;
 }
 
 .row-action:hover {
   border-color: var(--ink-soft);
   color: var(--ink);
+  background: var(--sunk);
 }
 
 /* Pause/Resume/Cancel (or Show/Remove) sit together at the row's right edge. */
@@ -593,7 +705,7 @@ body {
 }
 
 .row-stats {
-  margin-top: 4px;
+  margin-top: 6px;
   font-size: 12px;
   color: var(--ink-soft);
   min-height: 16px;
@@ -609,26 +721,10 @@ body {
 .meter {
   position: relative;
   height: 6px;
-  margin-top: 8px;
-  border-radius: 3px;
+  margin-top: 10px;
+  border-radius: 999px;
   overflow: hidden;
-  /* Track plus etched graduation ticks every 10% of the width. */
   background: var(--rule);
-}
-
-.meter::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: repeating-linear-gradient(
-    90deg,
-    transparent 0,
-    transparent calc(10% - 1px),
-    var(--field) calc(10% - 1px),
-    var(--field) 10%
-  );
-  opacity: 0.6;
-  pointer-events: none;
 }
 
 .meter-fill {
@@ -637,6 +733,7 @@ body {
   top: 0;
   bottom: 0;
   width: 0;
+  border-radius: 999px;
   background: var(--flow);
   transition: width 200ms linear;
 }
@@ -647,7 +744,7 @@ body {
 
 .row.error .meter-fill,
 .row.cancelled .meter-fill {
-  background: var(--ink-soft);
+  background: var(--ink-faint);
 }
 
 /* Paused / interrupted: hold the fill in place but dim it so it reads as
@@ -665,12 +762,18 @@ body {
   outline-offset: 2px;
 }
 
+/* The well shows its own focus-within ring, so suppress the inner outline. */
+.url:focus-visible {
+  outline: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .preview,
   .meter-fill,
   .skel-thumb,
   .skel-line,
-  .skel-chip {
+  .skel-chip,
+  .engine.busy .engine-icon {
     animation: none;
     transition: none;
   }
@@ -679,6 +782,10 @@ body {
 /* ---- Narrow window --------------------------------------------------- */
 
 @media (max-width: 560px) {
+  .app {
+    padding: 0 16px;
+  }
+
   .preview {
     flex-direction: column;
   }

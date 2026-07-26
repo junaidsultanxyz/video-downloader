@@ -8,9 +8,25 @@
   </head>
   <body>
     <div class="app">
-      <!-- Header: wordmark + engine status -->
+      <!-- Header: brand + engine status -->
       <header class="header">
-        <span class="wordmark">VIDEO DOWNLOADER</span>
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M12 4v10" />
+              <path d="m8 11 4 4 4-4" />
+              <path d="M6 20h12" />
+            </svg>
+          </span>
+          <span class="wordmark">Video Downloader</span>
+        </div>
         <div class="header-controls">
           <button
             id="theme-toggle"
@@ -58,7 +74,20 @@
             type="button"
             title="Update the download engine"
           >
-            <span class="engine-dot"></span>
+            <svg
+              class="engine-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M23 4v6h-6" />
+              <path d="M1 20v-6h6" />
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+            </svg>
             <span id="engine-label" class="engine-label">checking engine…</span>
           </button>
         </div>
