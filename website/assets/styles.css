@@ -1,0 +1,55 @@
+/* Small extras Tailwind utilities don't cover on their own. Everything else is
+   Tailwind classes in the markup. */
+
+/* Subtle dotted grid behind the hero, fading out toward the bottom. */
+.hero-grid {
+  background-image: radial-gradient(
+    circle at center,
+    rgba(47, 95, 224, 0.14) 1px,
+    transparent 1px
+  );
+  background-size: 26px 26px;
+  -webkit-mask-image: linear-gradient(to bottom, black, transparent 75%);
+  mask-image: linear-gradient(to bottom, black, transparent 75%);
+}
+
+.dark .hero-grid {
+  background-image: radial-gradient(
+    circle at center,
+    rgba(91, 141, 239, 0.16) 1px,
+    transparent 1px
+  );
+}
+
+/* Faint diagonal sheen on the screenshot placeholder so it doesn't read as a
+   flat empty box before a real image is dropped in. */
+.screenshot-placeholder {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    rgba(100, 116, 139, 0.05) 0,
+    rgba(100, 116, 139, 0.05) 1px,
+    transparent 1px,
+    transparent 12px
+  );
+}
+
+/* Cross-fade colours only while the theme is actually switching. The class is
+   added by the toggle just for the duration of the swap, so hover and other
+   interactions stay instant the rest of the time, and there is no fade on the
+   initial page load. */
+@media (prefers-reduced-motion: no-preference) {
+  html.theme-anim,
+  html.theme-anim *,
+  html.theme-anim *::before,
+  html.theme-anim *::after {
+    transition: background-color 300ms ease, border-color 300ms ease,
+      color 300ms ease, fill 300ms ease, box-shadow 300ms ease !important;
+  }
+}
+
+/* Respect users who ask for less motion. */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
