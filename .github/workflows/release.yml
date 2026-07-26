@@ -94,6 +94,22 @@ jobs:
           APPIMAGE_EXTRACT_AND_RUN: "1"
         run: npx --yes @tauri-apps/cli@^2 build --bundles appimage
 
+      # linuxdeploy bundles this runner's own libwayland-client/-server/-cursor/
+      # -egl into the AppImage. Those are hardware/compositor-tied libraries
+      # that must match the machine the app actually runs on; a stale bundled
+      # copy shadows the host's newer one and breaks EGL, which is what caused
+      # the AppImage to open to a blank white window on a newer distro (Fedora)
+      # than the one that built it (see scripts/fix-appimage-wayland-libs.sh
+      # and tauri-apps/tauri#11988 for the same failure elsewhere).
+      - name: Fix AppImage bundled Wayland libraries (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          curl -sSL --max-time 120 -o /tmp/appimagetool \
+            "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage"
+          chmod +x /tmp/appimagetool
+          APPIMAGETOOL=/tmp/appimagetool bash scripts/fix-appimage-wayland-libs.sh \
+            src-tauri/target/release/bundle/appimage/*.AppImage
+
       - name: Publish Linux release assets
         if: runner.os == 'Linux'
         env:
