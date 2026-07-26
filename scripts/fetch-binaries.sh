@@ -45,10 +45,17 @@ if [ "$os" = "macos" ]; then
   unzip -q "$tmp/ffmpeg.zip" -d "$tmp"
   mv "$tmp/ffmpeg" "$bin_dir/ffmpeg-$triple"
 else
-  # John Van Sickle's static Linux build ships ffmpeg in a versioned folder.
-  curl -fL "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz" \
-    -o "$tmp/ffmpeg.tar.xz"
-  tar -xf "$tmp/ffmpeg.tar.xz" -C "$tmp"
+  # Prefer John Van Sickle's static Linux build, but fall back to GitHub-hosted
+  # builds so CI does not fail when johnvansickle.com is temporarily unreachable.
+  ffmpeg_archive="$tmp/ffmpeg.tar.xz"
+  if ! curl --retry 3 --retry-delay 2 --connect-timeout 30 -fL \
+    "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz" \
+    -o "$ffmpeg_archive"; then
+    curl --retry 3 --retry-delay 2 --connect-timeout 30 -fL \
+      "https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-linux64-gpl.tar.xz" \
+      -o "$ffmpeg_archive"
+  fi
+  tar -xf "$ffmpeg_archive" -C "$tmp"
   # Copy only the ffmpeg executable — skip ffprobe and everything else.
   found="$(find "$tmp" -type f -name ffmpeg | head -n1)"
   cp "$found" "$bin_dir/ffmpeg-$triple"
