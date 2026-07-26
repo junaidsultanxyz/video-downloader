@@ -20,8 +20,12 @@
   --max-width: 780px;
 }
 
+/* Dark palette. Applied when the OS prefers dark and the user has not forced
+   light, or whenever the user explicitly selects dark with the header toggle.
+   The [data-theme] attribute selector outranks the bare :root in the media
+   query, so an explicit choice always wins over the system preference. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --field: #14181d;
     --panel: #1b2027;
     --ink: #e4e8ec;
@@ -31,6 +35,17 @@
     --settled: #4fa97b;
     --fault: #d9704f;
   }
+}
+
+:root[data-theme="dark"] {
+  --field: #14181d;
+  --panel: #1b2027;
+  --ink: #e4e8ec;
+  --ink-soft: #8a94a2;
+  --rule: #2a313a;
+  --flow: #5b8def;
+  --settled: #4fa97b;
+  --fault: #d9704f;
 }
 
 * {
@@ -102,6 +117,50 @@ body {
   font-weight: 600;
   letter-spacing: 0.16em;
   font-size: 13px;
+}
+
+/* Right-hand header cluster: theme toggle + engine status. */
+.header-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.theme-toggle:hover {
+  color: var(--ink);
+}
+
+.theme-toggle svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Show the icon for the action available: a moon in light mode (tap to go
+   dark), a sun in dark mode (tap to go light). */
+.theme-toggle .icon-sun {
+  display: none;
+}
+
+:root[data-theme="dark"] .theme-toggle .icon-moon {
+  display: none;
+}
+
+:root[data-theme="dark"] .theme-toggle .icon-sun {
+  display: inline;
 }
 
 .engine {
@@ -460,6 +519,24 @@ body {
   background: var(--ink-soft);
 }
 
+/* Interrupted (app was closed mid-download): amber-ish accent, resumable. */
+.row.interrupted::before {
+  background: var(--flow);
+  opacity: 0.55;
+}
+
+/* Livestream/segmented caption under the title. */
+.row-frag {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+
+.row-frag::before {
+  content: "◆ ";
+  color: var(--flow);
+}
+
 .row-top {
   display: flex;
   align-items: center;
@@ -573,8 +650,10 @@ body {
   background: var(--ink-soft);
 }
 
-/* Paused: hold the fill in place but dim it so it reads as "waiting". */
-.row.paused .meter-fill {
+/* Paused / interrupted: hold the fill in place but dim it so it reads as
+   "waiting" rather than actively downloading. */
+.row.paused .meter-fill,
+.row.interrupted .meter-fill {
   opacity: 0.45;
   transition: none;
 }

@@ -4,15 +4,17 @@
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 
-// The fixed set of options offered for every link, in display order. Ids are the
-// tokens the backend understands: "vbest", "v<height>", or "audio:<format>".
-const OPTIONS = [
-  { id: "vbest", label: "Best" },
-  { id: "v1080", label: "1080p mp4" },
-  { id: "v720", label: "720p mp4" },
-  { id: "v480", label: "480p mp4" },
-  { id: "audio:mp3", label: "Audio only" },
-];
+// Audio-only is always offered, after whatever video resolutions the link has.
+// Its id ("audio:<format>") is the token the backend understands, alongside the
+// per-resolution "v<height>" tokens that come back from probe_url.
+const AUDIO_OPTION = { id: "audio:mp3", label: "Audio only", note: "mp3" };
+
+// The options shown for the current preview: the probed video resolutions
+// (highest → lowest, each with its mp4 size) followed by audio-only.
+function qualityOptions() {
+  const videos = Array.isArray(preview?.qualities) ? preview.qualities : [];
+  return [...videos, AUDIO_OPTION];
+}
 
 // ---- State ------------------------------------------------------------
 
@@ -21,6 +23,9 @@ let preview = null; // the currently previewed media, or null
 let selectedQuality = null; // { id, label } chosen in the preview card
 
 const settings = loadSettings();
+
+// Apply the saved (or system) theme before anything paints, to avoid a flash.
+initTheme();
 
 // ---- Element handles --------------------------------------------------
 
@@ -35,6 +40,7 @@ const el = {
   activeCount: document.getElementById("active-count"),
   engine: document.getElementById("engine"),
   engineLabel: document.getElementById("engine-label"),
+  themeToggle: document.getElementById("theme-toggle"),
 };
 
 // ---- Settings ---------------------------------------------------------
@@ -50,11 +56,116 @@ function loadSettings() {
     // Where the save dialog opens next time, and the last option picked.
     lastDir: stored.lastDir || "",
     defaultQuality: stored.defaultQuality || "vbest",
+    // "light" | "dark", or null to follow the OS on first run.
+    theme: stored.theme === "light" || stored.theme === "dark" ? stored.theme : null,
   };
 }
 
 function saveSettings() {
   localStorage.setItem("sluice.settings", JSON.stringify(settings));
+}
+
+// ---- Queue persistence ------------------------------------------------
+//
+// The queue is mirrored to localStorage so that if the app is closed (or
+// crashes) mid-download, the job comes back on next launch as "interrupted" and
+// can be resumed exactly where it stopped — yt-dlp's --continue picks up the
+// partial file that was left on disk.
+
+let lastQueueSave = 0;
+
+// The lean, persistable shape of a queue item — volatile fields (speed, eta …)
+// are recomputed live and left out.
+function saveQueue() {
+  lastQueueSave = Date.now();
+  const data = queue.map((i) => ({
+    id: i.id,
+    url: i.url,
+    title: i.title,
+    thumb: i.thumb,
+    quality: i.quality,
+    qualityLabel: i.qualityLabel,
+    outDir: i.outDir,
+    fragmented: i.fragmented,
+    status: i.status,
+    percent: i.percent,
+    path: i.path,
+    outputs: i.outputs || [],
+  }));
+  try {
+    localStorage.setItem("sluice.queue", JSON.stringify(data));
+  } catch {
+    /* storage full or unavailable — nothing we can do, just skip */
+  }
+}
+
+// Called from the frequent progress stream: persist at most every ~1.5s so a
+// crash never loses more than a moment of progress, without hammering storage.
+function saveQueueThrottled() {
+  if (Date.now() - lastQueueSave > 1500) saveQueue();
+}
+
+function loadQueue() {
+  let data = [];
+  try {
+    data = JSON.parse(localStorage.getItem("sluice.queue") || "[]");
+  } catch {
+    data = [];
+  }
+  if (!Array.isArray(data)) return;
+
+  for (const raw of data) {
+    if (!raw || !raw.id) continue;
+    // Anything that was live when we last closed can't still be running, so it
+    // reopens as "interrupted" — resumable from the partial file on disk.
+    const wasActive =
+      raw.status === "running" ||
+      raw.status === "paused" ||
+      raw.status === "interrupted";
+    const status = wasActive ? "interrupted" : raw.status;
+    queue.push({
+      id: raw.id,
+      url: raw.url,
+      title: raw.title || "Untitled",
+      thumb: raw.thumb || "",
+      quality: raw.quality,
+      qualityLabel: raw.qualityLabel || "",
+      outDir: raw.outDir,
+      fragmented: !!raw.fragmented,
+      status,
+      percent: raw.percent || 0,
+      speed: "",
+      eta: "",
+      size: "",
+      stage: status === "interrupted" ? "Interrupted" : "",
+      path: raw.path || null,
+      error: null,
+      outputs: Array.isArray(raw.outputs) ? raw.outputs : [],
+    });
+  }
+  renderList();
+}
+
+// ---- Theme ------------------------------------------------------------
+
+// Resolve the starting theme (stored choice, else the OS preference) and set it
+// on <html> so the CSS tokens switch.
+function initTheme() {
+  const theme =
+    settings.theme ||
+    (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  applyTheme(theme);
+}
+
+function applyTheme(theme) {
+  document.documentElement.setAttribute("data-theme", theme);
+  settings.theme = theme;
+  saveSettings();
+}
+
+function toggleTheme() {
+  const current = document.documentElement.getAttribute("data-theme");
+  applyTheme(current === "dark" ? "light" : "dark");
 }
 
 // ---- Init -------------------------------------------------------------
@@ -72,6 +183,7 @@ async function init() {
 
   wireEvents();
   await wireDownloadListeners();
+  loadQueue(); // restore any downloads left unfinished by a previous session
   refreshEngine();
 
   el.url.focus();
@@ -84,6 +196,7 @@ function wireEvents() {
     if (e.key === "Escape") dismissPreview();
   });
   el.engine.addEventListener("click", updateEngine);
+  el.themeToggle.addEventListener("click", toggleTheme);
 }
 
 // ---- Probe ------------------------------------------------------------
@@ -130,10 +243,13 @@ function platformName(extractor) {
 function renderPreview() {
   if (!preview) return;
 
-  // Pre-select the last-used option when it's in the list.
+  const options = qualityOptions();
+
+  // Pre-select the last-used option when this link still offers it, otherwise
+  // the first entry — which is the highest available resolution.
   const preferred =
-    OPTIONS.find((o) => o.id === settings.defaultQuality) || OPTIONS[0];
-  selectedQuality = { ...preferred };
+    options.find((o) => o.id === settings.defaultQuality) || options[0];
+  selectedQuality = { id: preferred.id, label: preferred.label };
 
   const thumb = preview.thumbnail
     ? `<img class="thumb" src="${escapeAttr(preview.thumbnail)}" alt="" />`
@@ -145,13 +261,17 @@ function renderPreview() {
   else if (preview.duration > 0)
     metaBits.push(`<span class="duration">${formatDuration(preview.duration)}</span>`);
 
-  const chips = OPTIONS.map(
-    (o) =>
-      `<button class="chip" type="button" role="button" aria-pressed="false"
+  const chips = options
+    .map(
+      (o) =>
+        `<button class="chip" type="button" role="button" aria-pressed="false"
          data-quality="${escapeAttr(o.id)}" data-label="${escapeAttr(
-        o.label
-      )}">${escapeHtml(o.label)}</button>`
-  ).join("");
+          o.label
+        )}">${escapeHtml(o.label)}${
+          o.note ? `<span class="q-note">${escapeHtml(o.note)}</span>` : ""
+        }</button>`
+    )
+    .join("");
 
   el.preview.innerHTML = `
     ${thumb}
@@ -210,6 +330,7 @@ async function download() {
     quality: selectedQuality.id,
     qualityLabel: selectedQuality.label,
     outDir: dir,
+    fragmented: !!preview.fragmented,
     status: "running", // no concurrency cap — each download starts at once
     percent: 0,
     speed: "",
@@ -218,8 +339,12 @@ async function download() {
     stage: "Starting",
     path: null,
     error: null,
+    // Paths yt-dlp writes to, learned from dl:file — used to clean up partials
+    // if the row is removed before it finishes.
+    outputs: [],
   };
   queue.push(item);
+  saveQueue();
 
   // Clear the input for the next paste but keep the preview card up so another
   // quality of the same video can be downloaded immediately.
@@ -247,6 +372,7 @@ async function startJob(item) {
       item.error = String(err);
       renderRow(item);
       renderActiveCount();
+      saveQueue();
     }
   }
 }
@@ -260,6 +386,7 @@ function cancelItem(item) {
   item.stage = "";
   renderRow(item);
   renderActiveCount();
+  saveQueue();
   invoke("cancel_download", { id: item.id }).catch(() => {});
 }
 
@@ -269,6 +396,7 @@ function pauseItem(item) {
   item.stage = "Paused";
   renderRow(item);
   renderActiveCount();
+  saveQueue();
   invoke("pause_download", { id: item.id }).catch(() => {});
 }
 
@@ -278,15 +406,39 @@ function resumeItem(item) {
   item.stage = "Downloading";
   renderRow(item);
   renderActiveCount();
+  saveQueue();
   invoke("resume_download", { id: item.id }).catch(() => {});
 }
 
-// Drop a finished row (done, cancelled or error) from the list.
+// Restart a download that was interrupted by the app closing. A fresh yt-dlp
+// process is spawned; --continue resumes the partial file left on disk, so it
+// picks up where it stopped rather than starting over.
+function resumeInterrupted(item) {
+  if (item.status !== "interrupted") return;
+  item.status = "running";
+  item.stage = "Resuming";
+  item.error = null;
+  renderRow(item);
+  renderActiveCount();
+  saveQueue();
+  startJob(item);
+}
+
+// Drop a row (done, cancelled, error or interrupted) from the list. For an
+// unfinished job we also delete the partial files it left behind — but never
+// for a completed one, whose file is the result the user wanted to keep.
 function removeItem(item) {
   const index = queue.indexOf(item);
   if (index !== -1) queue.splice(index, 1);
   document.getElementById(`row-${item.id}`)?.remove();
   el.empty.hidden = queue.length > 0;
+  if (item.status !== "done" && item.outputs && item.outputs.length) {
+    invoke("discard_download", {
+      outDir: item.outDir,
+      outputs: item.outputs,
+    }).catch(() => {});
+  }
+  saveQueue();
 }
 
 // ---- Download event listeners ----------------------------------------
@@ -302,6 +454,20 @@ async function wireDownloadListeners() {
     item.size = p.size;
     item.stage = p.stage;
     patchRow(item); // patch only, never re-render the whole list
+    saveQueueThrottled();
+  });
+
+  // Each path yt-dlp writes to, so an interrupted job can be resumed or its
+  // partials cleaned up on removal.
+  await listen("dl:file", (event) => {
+    const f = event.payload;
+    const item = queue.find((i) => i.id === f.id);
+    if (!item) return;
+    if (!item.outputs) item.outputs = [];
+    if (!item.outputs.includes(f.path)) {
+      item.outputs.push(f.path);
+      saveQueue();
+    }
   });
 
   await listen("dl:done", (event) => {
@@ -322,6 +488,7 @@ async function wireDownloadListeners() {
     }
     renderRow(item);
     renderActiveCount();
+    saveQueue();
   });
 }
 
@@ -369,6 +536,12 @@ function buildRow(item) {
     ? `<img class="row-thumb" src="${escapeAttr(item.thumb)}" alt="" />`
     : `<div class="row-thumb"></div>`;
 
+  // Livestream/segmented sources fetch hundreds of small parts, so they crawl
+  // even when the file is small — warn so the slowness isn't a surprise.
+  const fragNote = item.fragmented
+    ? `<div class="row-frag">Segmented livestream — fetched in many parts, so this is slower than usual</div>`
+    : "";
+
   li.innerHTML = `
     <div class="row-top">
       ${thumb}
@@ -376,6 +549,7 @@ function buildRow(item) {
       <span class="row-quality">${escapeHtml(item.qualityLabel)}</span>
       ${rowAction(item)}
     </div>
+    ${fragNote}
     <div class="row-stats data">${statsText(item)}</div>
     <div class="meter"><div class="meter-fill" style="width:${item.percent}%"></div></div>
   `;
@@ -388,6 +562,9 @@ function buildRow(item) {
           break;
         case "resume":
           resumeItem(item);
+          break;
+        case "continue":
+          resumeInterrupted(item);
           break;
         case "cancel":
           cancelItem(item);
@@ -413,6 +590,9 @@ function rowAction(item) {
   } else if (item.status === "paused") {
     btns.push(actionButton("resume", "Resume"));
     btns.push(actionButton("cancel", "Cancel"));
+  } else if (item.status === "interrupted") {
+    btns.push(actionButton("continue", "Resume"));
+    btns.push(actionButton("remove", "Remove"));
   } else if (item.status === "done") {
     btns.push(actionButton("reveal", "Show in folder"));
     btns.push(actionButton("remove", "Remove"));
@@ -432,6 +612,8 @@ function statsText(item) {
       return runningStats(item);
     case "paused":
       return `Paused · ${Math.round(item.percent)}%`;
+    case "interrupted":
+      return `Interrupted at ${Math.round(item.percent)}% · Resume to continue`;
     case "done":
       return "Saved";
     case "cancelled":
